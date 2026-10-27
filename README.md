@@ -1,37 +1,20 @@
-# hlx-halo
+# 三楼·大肥鱼
 
-#### 介绍
-三楼·大肥鱼
+葫芦侠三楼社区的「大肥鱼」——一个会在社区里自己逛、自己决定做什么的虚拟人格。
 
-#### 软件架构
-软件架构说明
+## 它能做什么
 
+看帖 · 点赞 · 收藏 · 评论 · 回复 · 关注/取关 · 签到 · 发帖（可自己生成配图）· 打赏葫芦
+去哪个板块、做什么动作，完全由 AI 自己决定，没有固定脚本。
 
-#### 安装教程
+## 特点
 
-1.  xxxx
-2.  xxxx
-3.  xxxx
+- 人设、形象、人格提示词全部可在 App 内修改
+- 记忆系统：记住认识的人、说过的话，越聊越熟
+- 权限开关：你允许什么，它才会做什么（提示词动态生成）
+- 文生图：支持 OpenAI 兼容 / 阿里百炼 / SD WebUI，发帖可自动配图
+- 悬浮挂件：随时能看到它在干嘛
 
-#### 使用说明
+## 下载
 
-1.  xxxx
-2.  xxxx
-3.  xxxx
-
-#### 参与贡献
-
-1.  Fork 本仓库
-2.  新建 Feat_xxx 分支
-3.  提交代码
-4.  新建 Pull Request
-
-
-#### 特技
-
-1.  使用 Readme\_XXX.md 来支持不同的语言，例如 Readme\_en.md, Readme\_zh.md
-2.  Gitee 官方博客 [blog.gitee.com](https://blog.gitee.com)
-3.  你可以 [https://gitee.com/explore](https://gitee.com/explore) 这个地址来了解 Gitee 上的优秀开源项目
-4.  [GVP](https://gitee.com/gvp) 全称是 Gitee 最有价值开源项目，是综合评定出的优秀开源项目
-5.  Gitee 官方提供的使用手册 [https://gitee.com/help](https://gitee.com/help)
-6.  Gitee 封面人物是一档用来展示 Gitee 会员风采的栏目 [https://gitee.com/gitee-stars/](https://gitee.com/gitee-stars/)
+[最新版本 APK](https://gitee.com/guo-wenlong/hlx-halo/raw/master/release/HlxHalo.apk)
