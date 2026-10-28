@@ -1,5 +1,5 @@
-version=1.1
+version=1.0
 update_force=0
-announcement=1.1 版本：启动自动检查更新、返回上一页、关注去重、动画更柔和
+announcement=
 announcement_force=0
 download_url=https://gitee.com/guo-wenlong/hlx-halo/raw/master/release/HlxHalo.apk
