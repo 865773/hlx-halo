@@ -87,6 +87,7 @@ public class MainActivity extends Activity {
         reportUsage();
         autoRestoreFish();
         autoSignInIfNeeded();
+        handler.postDelayed(() -> { try { checkUpdate(false); } catch (Exception ignored) {} }, 1500);
         if (sp.getString("ai_key", "").isEmpty() || !sp.getBoolean("guide_done", false)) {
             sp.edit().putInt("guide_step", 0).apply();
             showPage(P_GUIDE, false);
@@ -141,8 +142,8 @@ public class MainActivity extends Activity {
     private int animDir = 1;
 
     private void showPage(int id, boolean isTab) {
-        if (isTab) { curTab = id; stack.clear(); stack.add(id); }
-        else if (stack.isEmpty() || stack.get(stack.size() - 1) != id) stack.add(id);
+        if (isTab) curTab = id;
+        if (stack.isEmpty() || stack.get(stack.size() - 1) != id) stack.add(id);
 
         TextView[] tabs = {tabHome, tabPersona, tabSettings};
         int active = id;
@@ -174,11 +175,13 @@ public class MainActivity extends Activity {
             default: v = buildHome(true);
         }
         content.addView(v);
-        v.setAlpha(0.15f);
-        v.setTranslationX(animDir * dp(24));
-        v.animate().alpha(1f).translationX(0f)
-                .setDuration(300)
-                .setInterpolator(new android.view.animation.DecelerateInterpolator(1.6f))
+        v.setAlpha(0.35f);
+        v.setTranslationX(animDir * dp(10));
+        v.setScaleX(0.985f);
+        v.setScaleY(0.985f);
+        v.animate().alpha(1f).translationX(0f).scaleX(1f).scaleY(1f)
+                .setDuration(420)
+                .setInterpolator(new android.view.animation.AccelerateDecelerateInterpolator())
                 .start();
     }
 
@@ -220,12 +223,11 @@ public class MainActivity extends Activity {
             stack.remove(stack.size() - 1);
             int prev = stack.get(stack.size() - 1);
             stack.remove(stack.size() - 1);
+            animDir = -1;
             showPage(prev, false);
-        } else {
-            int cur = stack.isEmpty() ? P_HOME : stack.get(0);
-            if (cur != P_HOME) { showPage(P_HOME, true); }
-            else super.onBackPressed();
+            return;
         }
+        super.onBackPressed();
     }
 
     // ==================== 主页 ====================
@@ -242,13 +244,17 @@ public class MainActivity extends Activity {
                 if (e.getY() - pullStart[0] > 220) {
                     toast("刷新中…");
                     final View cv = content;
-                    cv.animate().translationY(dp(50)).alpha(0.6f).setDuration(140).withEndAction(() -> {
-                        showPage(P_HOME, true);
-                        cv.setTranslationY(0f);
-                        cv.setAlpha(1f);
-                        cv.animate().translationY(0f).alpha(1f).setDuration(180).start();
-                        toast("已刷新");
-                    }).start();
+                    cv.animate().translationY(dp(30)).alpha(0.7f).setDuration(160)
+                            .setInterpolator(new android.view.animation.AccelerateDecelerateInterpolator())
+                            .withEndAction(() -> {
+                                showPage(P_HOME, true);
+                                cv.setTranslationY(dp(18));
+                                cv.setAlpha(0.85f);
+                                cv.animate().translationY(0f).alpha(1f).setDuration(320)
+                                        .setInterpolator(new android.view.animation.OvershootInterpolator(1.1f))
+                                        .start();
+                                toast("已刷新");
+                            }).start();
                 }
                 pulling[0] = false;
             }
