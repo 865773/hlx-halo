@@ -1,5 +1,5 @@
 version=1.1
 update_force=0
-announcement=
+announcement=没什么
 announcement_force=0
 download_url=https://gitee.com/guo-wenlong/hlx-halo/raw/master/release/HlxHalo.apk
