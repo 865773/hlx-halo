@@ -116,6 +116,11 @@ public class FishBrain {
         s.append("【怎么用】下面按场景分组成卡片。挑一张，把 <尖括号> 换成真实值，原样返回这张卡片。\n");
         s.append("一张卡只做一件事；想做多件就把 actions 数组写多个动作名。\n");
         s.append("拿不准就少做，宁可什么都不做，也不要瞎点。\n\n");
+        s.append("⑲ 查看某人的收藏/主页\n作用：看这个人收藏了哪些帖子，或者他的主页信息（等级/葫芦/粉丝/签名）。\n"
+                + "返回：{\"actions\":[\"user_favorites\"],\"user_id\":<uid>} 或 {\"actions\":[\"user_info\"],\"user_id\":<uid>}\n\n");
+        s.append("【目标要对】说“收藏我的收藏里的第 N 个”-> favorite_user_favorite + user_id + favorite_index；"
+                + "说“在我的帖子下面评论/@人”-> comment_my_post + post_index + content；"
+                + "说“收藏我的第 N 个帖子”-> 先用 list_self 拿帖子序号再 favorite_user_post。\n\n");
         s.append("【A. 看帖时】【B. 跟人打交道】【C. 别人的帖子】【D. 自己的帖子】【E. 社区功能】\n\n");
         s.append("【新协议（推荐，和卡片二选一）】按结构化意图返回更不容易错：\n");
         s.append("返回一个 JSON：think 想法、action 动作名、target.kind 目标类型（current 当前帖 / user 配 uid / post 配 post_id / my_post 配 index）、content 评论内容、reason 为什么。\\n");
