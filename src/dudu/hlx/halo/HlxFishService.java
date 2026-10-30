@@ -1142,7 +1142,14 @@ public class HlxFishService extends Service {
             }
             moodNudge(1, "和大家互动了");
             FishMemory.addFavor(sp, authorId, 1);
-            mem("在「" + boardName + "」看了《" + title + "》并" + sb);
+            // 只在有真实帖子上下文、且不是“已关注过”这种空动作时写入记忆
+            String doneStr = sb.toString().trim();
+            if (boardName != null && !boardName.isEmpty()
+                    && title != null && !title.isEmpty()
+                    && !"已关注过".equals(doneStr)
+                    && !"已关注过".equals(doneStr.replace("·", ""))) {
+                mem("在「" + boardName + "」看了《" + title + "》并" + doneStr);
+            }
         }
     }
 
