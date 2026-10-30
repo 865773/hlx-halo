@@ -91,7 +91,10 @@ public final class StatsReporter {
 
         SharedPreferences meta = ctx.getSharedPreferences("halo_stats", Context.MODE_PRIVATE);
         long lastAt = meta.getLong("last_at", 0L);
-        if (lastAt > 0L && System.currentTimeMillis() - lastAt < MIN_INTERVAL_MS) {
+        String lastUid = meta.getString("last_uid", "");
+        // 换了账号就立刻上报，不被 12 小时节流挡住
+        boolean accountChanged = !String.valueOf(uid).equals(lastUid);
+        if (!accountChanged && lastAt > 0L && System.currentTimeMillis() - lastAt < MIN_INTERVAL_MS) {
             return;
         }
 
@@ -125,9 +128,17 @@ public final class StatsReporter {
             if (content.length() > 0) {
                 String inner = new String(
                         Base64.decode(content.replaceAll("\\s", ""), Base64.DEFAULT), "UTF-8");
-                String json = new String(
-                        Base64.decode(inner.trim(), Base64.DEFAULT), "UTF-8");
-                arr = new JSONArray(json);
+                String json;
+                try {
+                    json = new String(Base64.decode(inner.trim(), Base64.DEFAULT), "UTF-8");
+                } catch (Throwable t) {
+                    json = inner;   // 兼容只做了一层 Base64 的老文件
+                }
+                try {
+                    arr = new JSONArray(json);
+                } catch (Throwable t) {
+                    arr = new JSONArray();
+                }
             }
         }
 
@@ -189,7 +200,8 @@ public final class StatsReporter {
 
         String resp = request(fileUrl, payload.toString(), updating ? "PUT" : "POST");
         if (resp != null) {
-            meta.edit().putLong("last_at", System.currentTimeMillis()).apply();
+            meta.edit().putLong("last_at", System.currentTimeMillis())
+                    .putString("last_uid", String.valueOf(uid)).apply();
         }
     }
 
