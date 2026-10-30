@@ -1,6 +1,6 @@
-version=1.0
+version=1.1
 update_force=1
 announcement=
 announcement_force=0
 download_url=https://gitee.com/guo-wenlong/hlx-halo/raw/master/release/HlxHalo.apk
-notes=
+notes=修复账号被封禁/被顶号但界面仍显示已登录的问题\n新增统一登录异常检测，连续 2 次确认才退出登录\n网络超时/502/503/断网不再误清登录态\n退出登录时停止自动任务、清通知，保留记忆目录
