@@ -1736,7 +1736,11 @@ public class MainActivity extends Activity {
         presetBtn.setTextSize(12);
         presetBtn.setTextColor(Color.WHITE);
         presetBtn.setBackground(round(C_SECONDARY, 20));
-        presetBtn.setOnClickListener(v -> applyDashscopePreset());
+        presetBtn.setOnClickListener(v -> {
+            sp.edit().putInt("guide_step", s).apply();   // 记住当前步骤
+            applyDashscopePreset();
+            showPage(P_GUIDE, false);                    // 立刻重建，字段马上显示填好的值
+        });
         LinearLayout.LayoutParams pbp = new LinearLayout.LayoutParams(-1, dp(42));
         pbp.topMargin = dp(10);
         card.addView(presetBtn, pbp);
