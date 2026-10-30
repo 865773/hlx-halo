@@ -1,4 +1,4 @@
-version=1.2
+version=1.0
 update_force=1
 announcement=
 announcement_force=1
