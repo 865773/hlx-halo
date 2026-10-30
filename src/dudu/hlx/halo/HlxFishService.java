@@ -223,6 +223,7 @@ public class HlxFishService extends Service {
             }
         });
         try { wm.addView(fishView, lp); } catch (Exception ignored) {}
+        fishBreath();
     }
 
     private void removeFish() {
@@ -350,6 +351,7 @@ public class HlxFishService extends Service {
             try { doDiary(hlx, key); } catch (Exception ignored) {}
             genLife();
 
+            sp.edit().putString("state_text", "正在决定要做什么…").apply();
             int round = sp.getInt("round_today", 0) + 1;
             sp.edit().putInt("round_today", round).apply();
 
@@ -389,6 +391,9 @@ public class HlxFishService extends Service {
             log("出错：" + e.getMessage());
         } finally {
             busy = false;
+            String[] idle = {"在刷抖音", "在吃瓜", "在休息", "在追剧", "在发呆",
+                    "在啃白米饭", "在摸鱼", "在看别人的帖子", "在打游戏", "在等饭"};
+            sp.edit().putString("state_text", idle[random.nextInt(idle.length)]).apply();
         }
     }
 
@@ -603,6 +608,58 @@ public class HlxFishService extends Service {
         sp.edit().putString("replied_cids", sb.toString()).apply();
     }
 
+    /** 挂件呼吸动效：轻微缩放 + 偶尔歪头，像活的一样 */
+    private void fishBreath() {
+        if (fishView == null) return;
+        try {
+            fishView.animate().scaleX(1.06f).scaleY(0.95f).setDuration(880)
+                    .withEndAction(() -> {
+                        if (fishView == null) return;
+                        fishView.animate().scaleX(1f).scaleY(1f).setDuration(880)
+                                .withEndAction(() -> {
+                                    if (random.nextInt(3) == 0) {
+                                        fishView.animate().rotation(6f).setDuration(420)
+                                                .withEndAction(() -> fishView.animate().rotation(-4f).setDuration(500)
+                                                        .withEndAction(() -> fishView.animate().rotation(0f).setDuration(380)
+                                                                .withEndAction(this::fishBreath).start()).start()).start();
+                                    } else {
+                                        fishBreath();
+                                    }
+                                }).start();
+                    }).start();
+        } catch (Exception ignored) {}
+    }
+
+    /** 我关注的人（本地缓存，30 分钟刷一次） */
+    private java.util.Set<Long> followingSet(HlxClient hlx) {
+        java.util.Set<Long> out = new java.util.HashSet<>();
+        long at = sp.getLong("following_at", 0);
+        String cache = sp.getString("following_cache", "");
+        boolean stale = System.currentTimeMillis() - at > 30 * 60_000L;
+        if (stale || cache.isEmpty()) {
+            StringBuilder sb = new StringBuilder();
+            try {
+                for (JSONObject f : hlx.followingList(hlx.uid(), 100)) {
+                    JSONObject u = f.optJSONObject("user");
+                    if (u == null) continue;
+                    long id = u.optLong("userID", 0);
+                    if (id <= 0) continue;
+                    out.add(id);
+                    if (sb.length() > 0) sb.append(',');
+                    sb.append(id);
+                }
+                sp.edit().putString("following_cache", sb.toString())
+                        .putLong("following_at", System.currentTimeMillis()).apply();
+            } catch (Exception ignored) {}
+        }
+        if (out.isEmpty() && !cache.isEmpty()) {
+            for (String x : cache.split(",")) {
+                try { out.add(Long.parseLong(x.trim())); } catch (Exception ignored) {}
+            }
+        }
+        return out;
+    }
+
     /** 所有操作之间统一 0~15 秒随机间隔 */
     private void randGap() {
         try { Thread.sleep(random.nextInt(15_000)); } catch (Exception ignored) {}
@@ -711,10 +768,28 @@ public class HlxFishService extends Service {
                 }
                 case "follow": {
                     int fu1 = d.optInt("user_id", authorId);
-                    if (fu1 > 0 && hlx.followSafe(fu1)) {
+                    if (fu1 <= 0) break;
+                    // ① 先查本地关注列表缓存，已经在里面就直接跳过（不发请求、不记动态）
+                    java.util.Set<Long> fset = followingSet(hlx);
+                    if (fset.contains((long) fu1)) {
+                        done.add("已关注过");
+                        break;
+                    }
+                    // ② 本地没有，再核对一次云端（防止缓存过期），都没有才真的关注
+                    if (hlx.isFollowing(fu1)) {
+                        fset.add((long) fu1);
+                        done.add("已关注过");
+                        break;
+                    }
+                    if (hlx.followSafe(fu1)) {
+                        fset.add((long) fu1);
+                        StringBuilder sb = new StringBuilder();
+                        for (Long x : fset) { if (sb.length() > 0) sb.append(','); sb.append(x); }
+                        sp.edit().putString("following_cache", sb.toString())
+                                .putLong("following_at", System.currentTimeMillis())
+                                .putLong("follow_ok_" + fu1, System.currentTimeMillis()).apply();
                         tFollow++; bump("today_follow"); done.add("关注");
                         logPost("关注了 @" + author, "关注", "", author, think);
-                        mem("关注了 @" + author);
                     }
                     break;
                 }
@@ -1291,6 +1366,7 @@ public class HlxFishService extends Service {
 
     /** 写用户记忆，超长自动让 AI 摘要 */
     private void memUser(long uid, String nick, String line) {
+        if (uid <= 0 || uid == sp.getLong("hlx_uid", 0)) return;   // 自己的发言不进用户记忆
         FishMemory.rememberUser(this, uid, nick, line);
         FishMemory.compactIfNeeded(this, "mem_u" + uid + ".txt", sp.getString("ai_key", ""),
                 sp.getInt("user_mem_max_chars", 800), "你和一个用户之间的往来记忆");
