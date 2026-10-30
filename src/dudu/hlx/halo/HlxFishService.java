@@ -93,6 +93,7 @@ public class HlxFishService extends Service {
         startForegroundNotice();
         addFish();
         loadToday();
+        releaseStaleClaims();
         startWakeLoop();
         startReplyLoop();
         startKeyCheckLoop();
@@ -619,6 +620,28 @@ public class HlxFishService extends Service {
         return s;
     }
 
+    /** 启动时清理：认领超过 10 分钟却没发出去的 cid，放回去重试 */
+    private void releaseStaleClaims() {
+        try {
+            long now = System.currentTimeMillis();
+            java.util.Map<String, ?> all = sp.getAll();
+            int n = 0;
+            for (String k : new java.util.ArrayList<>(all.keySet())) {
+                if (!k.startsWith("claim_")) continue;
+                Object v = all.get(k);
+                long ts = v instanceof Long ? (Long) v : 0;
+                long cid = 0;
+                try { cid = Long.parseLong(k.substring(6)); } catch (Exception ignored) {}
+                if (cid > 0 && now - ts > 3 * 60_000L) {
+                    unmarkReplied(cid);
+                    sp.edit().remove(k).apply();
+                    n++;
+                }
+            }
+            if (n > 0) log("♻️ 释放 " + n + " 条超时未发出的回复认领");
+        } catch (Exception ignored) {}
+    }
+
     private void unmarkReplied(long cid) {
         Set<Long> s = loadReplied();
         if (!s.remove(cid)) return;
@@ -628,6 +651,7 @@ public class HlxFishService extends Service {
     }
 
     private void markReplied(long cid) {
+        sp.edit().putLong("claim_" + cid, System.currentTimeMillis()).apply();
         Set<Long> s = loadReplied();
         s.add(cid);
         StringBuilder sb = new StringBuilder();
@@ -778,6 +802,34 @@ public class HlxFishService extends Service {
                     log("⏸ 和 uid=" + uid + " 回复太频繁（10 分钟 " + cnt + " 次，平均 "
                             + (avg / 1000) + " 秒），按机器人互刷处理，暂停 30 分钟");
                 }
+            }
+        } catch (Exception ignored) {}
+    }
+
+    /** 记录对方发来的消息；短时间高频就判定机器人 */
+    private void incomingTick(long uid, String nick) {
+        try {
+            long owner = sp.getLong("owner_uid", 0);
+            if (uid <= 0 || uid == owner) return;
+            String k = "in_" + uid;
+            String raw = sp.getString(k, "");
+            java.util.ArrayList<Long> ts = new java.util.ArrayList<>();
+            for (String x : raw.split(",")) {
+                try { ts.add(Long.parseLong(x.trim())); } catch (Exception ignored) {}
+            }
+            long now = System.currentTimeMillis();
+            ts.add(now);
+            while (ts.size() > 20) ts.remove(0);
+            StringBuilder sb = new StringBuilder();
+            for (Long t : ts) { if (sb.length() > 0) sb.append(','); sb.append(t); }
+            sp.edit().putString(k, sb.toString()).apply();
+
+            int cnt = 0;
+            for (Long t : ts) if (now - t <= 30 * 60_000L) cnt++;
+            if (cnt >= 5 && !botBlocked(uid)) {
+                sp.edit().putLong("bot_" + uid, now).apply();
+                log("🤖 判定 " + (nick == null || nick.isEmpty() ? ("uid=" + uid) : nick)
+                        + " 为疑似机器人（30 分钟内发了 " + cnt + " 条），之后一小时最多回一次");
             }
         } catch (Exception ignored) {}
     }
@@ -1502,6 +1554,7 @@ public class HlxFishService extends Service {
                 if (ct > 0 && ct < cutoff) continue;                 // 冷启动 90 分钟 / 平时 1 天
                 if (hasReplied(hlx, pid, cid, ct)) continue;         // 双保险
                 if (System.currentTimeMillis() < sp.getLong("rt_t_" + cid, 0)) continue;  // 退避中
+                incomingTick(from, fromNick);
                 if (botBlocked(from)) {
                     markReplied(cid);
                     log("🤖 疑似机器人 uid=" + from + "，这轮不回");
@@ -1554,7 +1607,15 @@ public class HlxFishService extends Service {
                 if (loadReplied().contains(cid)) continue;
                 markReplied(cid);
                 waitCommentGap();
-                boolean sent = hlx.comment(pid, cid, reply);
+                boolean sent = false;
+                try {
+                    sent = hlx.comment(pid, cid, reply);
+                } catch (Exception ex) {
+                    log("✗ 发送回复异常（cid=" + cid + "）：" + ex);
+                    unmarkReplied(cid);
+                    sp.edit().remove("claim_" + cid).apply();
+                    continue;
+                }
                 if (!sent) {
                     String err0 = hlx.lastError();
                     log("   ↳ 失败详情：" + err0);
@@ -1637,7 +1698,9 @@ public class HlxFishService extends Service {
                     randGap();
                 }
             }
-        } catch (Exception ignored) {}
+        } catch (Exception e) {
+            log("回复流程异常：" + e.getMessage());
+        }
     }
 
     // ================= 记忆 =================
