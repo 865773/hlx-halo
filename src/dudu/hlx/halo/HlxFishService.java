@@ -79,6 +79,7 @@ public class HlxFishService extends Service {
     private Runnable petTick;
     private String petState = "idle";
     private int petIdx = 0;
+    private volatile int lastActDone = 0;
 
     private int tLike, tComment, tFav, tFollow, tTip, tPost;
 
@@ -1014,6 +1015,7 @@ public class HlxFishService extends Service {
             if (done.size() > doneBefore && ai < acts.size() - 1) randGap();
         }
 
+        lastActDone = done.size();
         if (!done.isEmpty()) {
             StringBuilder sb = new StringBuilder();
             for (String x : done) { if (sb.length() > 0) sb.append("·"); sb.append(x); }
@@ -1198,6 +1200,25 @@ public class HlxFishService extends Service {
         }).start();
     }
 
+    /** 判断是不是乱码/加密帖（base64 之类），这种不互动 */
+    private boolean isGibberish(String t) {
+        if (t == null) return false;
+        String x = t.trim();
+        if (x.length() < 12) return false;
+        int cjk = 0, b64 = 0, total = 0;
+        for (int i = 0; i < x.length(); i++) {
+            char c = x.charAt(i);
+            if (Character.isWhitespace(c)) continue;
+            total++;
+            if (c >= 0x4E00 && c <= 0x9FFF) cjk++;
+            if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9')
+                    || c == '+' || c == '/' || c == '=') b64++;
+        }
+        if (total == 0) return false;
+        double cjkR = cjk * 1.0 / total, b64R = b64 * 1.0 / total;
+        return cjkR < 0.05 && b64R > 0.9 && x.length() >= 20;
+    }
+
     private void followFeedPass(HlxClient hlx, String key) {
         try {
             java.util.List<JSONObject> posts = hlx.followFeed(5);
@@ -1216,6 +1237,12 @@ public class HlxFishService extends Service {
                 String title = p.optString("title", "");
                 String detail = strip(p.optString("detail", ""));
                 if (detail.length() > 400) detail = detail.substring(0, 400);
+                if (isGibberish(title) || isGibberish(detail) || isGibberish(title + " " + detail)) {
+                    sp.edit().putString("follow_done",
+                            sp.getString("follow_done", ",") + pid + ",").apply();
+                    log("🙈 关注流里这条是乱码/加密内容，跳过：" + pid);
+                    continue;
+                }
                 String author = au != null ? au.optString("nick", "这位") : "这位";
                 String state = "你关注的人在「我的关注」发了新帖：\n【标题】" + title
                         + "\n【作者】" + author + "(uid=" + authorId + ")\n【正文】"
@@ -1413,11 +1440,10 @@ public class HlxFishService extends Service {
                         }
                     } catch (Exception ignored) {}
                     int tipBefore = tTip;
-                    int actBefore = tLike + tComment + tFav + tFollow + tTip + tPost;
                     try {
                         act(hlx, key, rd, 0, "", pid, (int) from, who, "", "", cid);
                     } catch (Exception ignored) {}
-                    int actAfter = tLike + tComment + tFav + tFollow + tTip + tPost;
+                    boolean acted = lastActDone > 0;
                     boolean wanted = false;
                     try {
                         JSONArray aw0 = rd == null ? null : rd.optJSONArray("actions");
@@ -1427,7 +1453,7 @@ public class HlxFishService extends Service {
                                     && !"user_posts".equals(x0) && !"user_info".equals(x0)) wanted = true;
                         }
                     } catch (Exception ignored) {}
-                    if (wanted && actAfter == actBefore && tipBlockMsg == null) {
+                    if (wanted && !acted && tipBlockMsg == null) {
                         reply = "诶…我这边刚没操作成功，等下我再试试[委屈]";
                     }
                     // 送葫芦失败就别嘴硬
