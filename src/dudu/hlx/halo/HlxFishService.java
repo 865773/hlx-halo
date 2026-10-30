@@ -189,6 +189,7 @@ public class HlxFishService extends Service {
         if (!Settings.canDrawOverlays(this)) return;
         wm = (WindowManager) getSystemService(WINDOW_SERVICE);
         fishView = new ImageView(this);
+        fishView.setScaleType(ImageView.ScaleType.FIT_CENTER);   // 保持原始比例，不拉伸
         Bitmap bmp = loadFishBitmap();
         if (bmp != null) fishView.setImageBitmap(bmp);
         else fishView.setImageResource(android.R.drawable.ic_menu_compass);
