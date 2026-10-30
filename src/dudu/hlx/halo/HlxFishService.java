@@ -796,7 +796,7 @@ public class HlxFishService extends Service {
             }
             if (cnt >= 8) {
                 long avg = cnt > 1 ? sumGap / (cnt - 1) : 0;
-                if (avg <= 60_000L) {
+                if (avg <= 25_000L) {
                     sp.edit().putLong("bot_" + uid, now)
                             .putLong("loop_mute_" + uid, now + 30 * 60_000L).apply();
                     log("⏸ 和 uid=" + uid + " 回复太频繁（10 分钟 " + cnt + " 次，平均 "
@@ -824,12 +824,12 @@ public class HlxFishService extends Service {
             for (Long t : ts) { if (sb.length() > 0) sb.append(','); sb.append(t); }
             sp.edit().putString(k, sb.toString()).apply();
 
+            // 只记录，不再据此判机器人（改用“我们回复他的频率”判断，避免误伤正常人）
             int cnt = 0;
-            for (Long t : ts) if (now - t <= 30 * 60_000L) cnt++;
-            if (cnt >= 5 && !botBlocked(uid)) {
-                sp.edit().putLong("bot_" + uid, now).apply();
-                log("🤖 判定 " + (nick == null || nick.isEmpty() ? ("uid=" + uid) : nick)
-                        + " 为疑似机器人（30 分钟内发了 " + cnt + " 条），之后一小时最多回一次");
+            for (Long t : ts) if (now - t <= 10 * 60_000L) cnt++;
+            if (cnt >= 20) {
+                log("👀 " + (nick == null || nick.isEmpty() ? ("uid=" + uid) : nick)
+                        + " 10 分钟内发来 " + cnt + " 条消息（仅记录，不判定）");
             }
         } catch (Exception ignored) {}
     }
@@ -844,6 +844,19 @@ public class HlxFishService extends Service {
             return now - last < 60L * 60_000L;      // 机器人：一小时最多回一次
         }
         return false;
+    }
+
+    /** 这个帖子是不是已确认锁定 */
+    private boolean postLocked(long pid) {
+        return pid > 0 && sp.getString("locked_posts", "").contains("," + pid + ",");
+    }
+
+    private void markPostLocked(long pid) {
+        if (pid <= 0) return;
+        String lk = sp.getString("locked_posts", ",");
+        if (!lk.contains("," + pid + ",")) {
+            sp.edit().putString("locked_posts", lk + pid + ",").apply();
+        }
     }
 
     /** 判断是不是乱码/加密帖（base64 之类），这种不互动 */
@@ -1057,6 +1070,9 @@ public class HlxFishService extends Service {
                         break;
                     }
                     if (!text.isEmpty() && hlx.comment(pid, 0, text)) {
+                        if (hlx.lastCode() == 201) {
+                            log("⏳ 评论已提交但需审核（code=201，可能暂时不显示）：" + hlx.lastMsg());
+                        }
                         rememberComment(text);
                         tComment++; bump("today_comment");
                         done.add("评论"); commentText = text;
@@ -1446,7 +1462,14 @@ public class HlxFishService extends Service {
                 mem("我自己在「" + boardName + "」发了帖子《" + title + "》：" + content);
                 genLife();
             } else {
-                log("📝 发帖失败：" + (r == null ? "无返回" : r.optString("msg", "")));
+                String msg = r == null ? "无返回" : r.optString("msg", "");
+                if (msg.contains("太快") || msg.contains("休息")) {
+                    log("📝 发帖太频繁，这一轮先不发（服务端冷却）");
+                } else if (r != null && r.optInt("code", 0) == 201) {
+                    log("⏳ 发帖已提交但需审核（code=201）：" + msg);
+                } else {
+                    log("📝 发帖失败：" + msg);
+                }
             }
         } catch (Exception e) {
             log("发帖异常：" + e.getMessage());
@@ -1555,6 +1578,11 @@ public class HlxFishService extends Service {
                 if (hasReplied(hlx, pid, cid, ct)) continue;         // 双保险
                 if (System.currentTimeMillis() < sp.getLong("rt_t_" + cid, 0)) continue;  // 退避中
                 incomingTick(from, fromNick);
+                if (postLocked(pid)) {
+                    markReplied(cid);
+                    log("🔒 帖子 " + pid + " 已确认锁定，跳过回复");
+                    continue;
+                }
                 if (botBlocked(from)) {
                     markReplied(cid);
                     log("🤖 疑似机器人 uid=" + from + "，这轮不回");
@@ -1620,6 +1648,7 @@ public class HlxFishService extends Service {
                     String err0 = hlx.lastError();
                     log("   ↳ 失败详情：" + err0);
                     if (err0.contains("锁定") || err0.contains("已删除") || err0.contains("无权")) {
+                        if (err0.contains("锁定")) markPostLocked(pid);
                         markReplied(cid);
                         sp.edit().remove("rt_" + cid).remove("rt_t_" + cid).apply();
                         log("🚫 这个话题不能回复了（" + err0 + "），不再重试");
@@ -1643,6 +1672,9 @@ public class HlxFishService extends Service {
                     }
                 }
                 if (sent) {
+                    if (hlx.lastCode() == 201) {
+                        log("⏳ 回复已提交但需审核（code=201，可能暂时不显示）：" + hlx.lastMsg());
+                    }
                     replyTick(from);
                     sp.edit().remove("rt_" + cid).apply();
                     markReplied(cid);
