@@ -2,9 +2,10 @@ package dudu.hlx.halo;
 
 import android.app.Activity;
 import android.content.Intent;
+import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Color;
-import android.media.MediaPlayer;
+import android.graphics.drawable.GradientDrawable;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
@@ -14,108 +15,87 @@ import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
-import android.widget.VideoView;
 
-import java.io.File;
-import java.io.FileOutputStream;
-import java.io.InputStream;
-
-/** 启动页：竖屏布局里居中播放 boot.mp4（横屏视频不拉伸，加标题和遮罩），播完进主页 */
+/** 启动页：渐变底 + 桌宠待机动画 + 名字，1.8 秒后进主页（无黑边） */
 public class SplashActivity extends Activity {
 
     private final Handler handler = new Handler(Looper.getMainLooper());
     private boolean jumped = false;
+    private Bitmap[] frames;
+    private int idx = 0;
 
     @Override
     protected void onCreate(Bundle b) {
         super.onCreate(b);
+
         FrameLayout root = new FrameLayout(this);
-        root.setBackgroundColor(Color.BLACK);
+        GradientDrawable bg = new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
+                new int[]{0xFF0B1B33, 0xFF123055, 0xFF0B1B33});
+        root.setBackground(bg);
 
-        // 视频：按宽度铺满、16:9 居中，不裁不拉伸
-        final VideoView vv = new VideoView(this);
-        FrameLayout.LayoutParams vlp = new FrameLayout.LayoutParams(-1, -2);
-        vlp.gravity = Gravity.CENTER;
-        root.addView(vv, vlp);
+        // 中间：桌宠待机帧
+        final ImageView pet = new ImageView(this);
+        FrameLayout.LayoutParams plp = new FrameLayout.LayoutParams(dp(190), dp(190));
+        plp.gravity = Gravity.CENTER;
+        plp.bottomMargin = dp(60);
+        root.addView(pet, plp);
 
-        // 上下渐变感：底部一块深色条 + 标题
-        LinearLayout bottom = new LinearLayout(this);
-        bottom.setOrientation(LinearLayout.VERTICAL);
-        bottom.setGravity(Gravity.CENTER_HORIZONTAL);
-        bottom.setPadding(0, 0, 0, 90);
+        // 底部文字
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setGravity(Gravity.CENTER_HORIZONTAL);
         FrameLayout.LayoutParams blp = new FrameLayout.LayoutParams(-1, -2);
         blp.gravity = Gravity.BOTTOM;
-        root.addView(bottom, blp);
-
-        ImageView logo = new ImageView(this);
-        try {
-            logo.setImageBitmap(BitmapFactory.decodeStream(getAssets().open("dafeiyu.png")));
-        } catch (Throwable ignored) {}
-        LinearLayout.LayoutParams llp = new LinearLayout.LayoutParams(96, 96);
-        llp.bottomMargin = 14;
-        bottom.addView(logo, llp);
+        blp.bottomMargin = dp(90);
+        root.addView(box, blp);
 
         TextView name = new TextView(this);
         name.setText("三楼 · 大肥鱼");
-        name.setTextColor(0xEEFFFFFF);
-        name.setTextSize(20);
+        name.setTextColor(0xFFFFFFFF);
+        name.setTextSize(21);
         name.setGravity(Gravity.CENTER);
-        bottom.addView(name);
+        box.addView(name);
 
         TextView tip = new TextView(this);
         tip.setText("正在叫醒它…");
         tip.setTextColor(0x99FFFFFF);
         tip.setTextSize(12);
         tip.setGravity(Gravity.CENTER);
-        tip.setPadding(0, 8, 0, 0);
-        bottom.addView(tip);
+        tip.setPadding(0, dp(8), 0, 0);
+        box.addView(tip);
 
         TextView skip = new TextView(this);
         skip.setText("跳过 ›");
-        skip.setTextColor(0xCCFFFFFF);
-        skip.setTextSize(13);
-        skip.setPadding(30, 24, 30, 24);
+        skip.setTextColor(0x99FFFFFF);
+        skip.setTextSize(12);
+        skip.setPadding(dp(24), dp(20), dp(24), dp(20));
         FrameLayout.LayoutParams slp = new FrameLayout.LayoutParams(-2, -2);
         slp.gravity = Gravity.TOP | Gravity.END;
-        slp.topMargin = 40;
-        slp.rightMargin = 16;
+        slp.topMargin = dp(28);
+        slp.rightMargin = dp(12);
         root.addView(skip, slp);
         skip.setOnClickListener(v -> go());
 
         setContentView(root);
 
+        // 载入 idle 帧
         try {
-            File f = new File(getCacheDir(), "boot.mp4");
-            if (!f.exists() || f.length() < 10000) {
-                InputStream in = getAssets().open("boot.mp4");
-                FileOutputStream out = new FileOutputStream(f);
-                byte[] buf = new byte[8192];
-                int n;
-                while ((n = in.read(buf)) > 0) out.write(buf, 0, n);
-                out.close();
-                in.close();
+            frames = new Bitmap[10];
+            for (int i = 0; i < frames.length; i++) {
+                frames[i] = BitmapFactory.decodeStream(getAssets().open("pet/idle_" + i + ".png"));
             }
-            vv.setVideoPath(f.getAbsolutePath());
-            vv.setOnPreparedListener((MediaPlayer mp) -> {
-                mp.setLooping(false);
-                // 视频铺满宽度，高度按比例
-                int vw = mp.getVideoWidth(), vh = mp.getVideoHeight();
-                if (vw > 0 && vh > 0) {
-                    int sw = getResources().getDisplayMetrics().widthPixels;
-                    int h = (int) (sw * (vh * 1.0f / vw));
-                    ViewGroup.LayoutParams lp2 = vv.getLayoutParams();
-                    lp2.width = sw;
-                    lp2.height = h;
-                    vv.setLayoutParams(lp2);
-                }
-                vv.start();
-            });
-            vv.setOnCompletionListener(mp -> go());
-            vv.setOnErrorListener((mp, what, extra) -> { go(); return true; });
-        } catch (Throwable t) {
-            go();
-        }
-        handler.postDelayed(this::go, 9000);
+        } catch (Throwable ignored) {}
+        tick(pet);
+
+        handler.postDelayed(this::go, 1800);
+    }
+
+    private void tick(final ImageView pet) {
+        if (jumped || frames == null) return;
+        Bitmap bm = frames[idx % frames.length];
+        if (bm != null) pet.setImageBitmap(bm);
+        idx++;
+        handler.postDelayed(() -> tick(pet), 130);
     }
 
     private void go() {
@@ -124,6 +104,10 @@ public class SplashActivity extends Activity {
         handler.removeCallbacksAndMessages(null);
         try { startActivity(new Intent(this, MainActivity.class)); } catch (Throwable ignored) {}
         finish();
+    }
+
+    private int dp(float v) {
+        return (int) (v * getResources().getDisplayMetrics().density + 0.5f);
     }
 
     @Override
