@@ -2129,6 +2129,24 @@ public class MainActivity extends Activity {
         return root;
     }
 
+    /** 标题像 base64 乱码就不要展示 */
+    private boolean isGibberishTitle(String t) {
+        if (t == null) return false;
+        String x = t.trim();
+        if (x.length() < 16) return false;
+        int cjk = 0, b64 = 0, total = 0;
+        for (int i = 0; i < x.length(); i++) {
+            char c = x.charAt(i);
+            if (Character.isWhitespace(c)) continue;
+            total++;
+            if (c >= 0x4E00 && c <= 0x9FFF) cjk++;
+            if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9')
+                    || c == '+' || c == '/' || c == '=') b64++;
+        }
+        if (total == 0) return false;
+        return cjk * 1.0 / total < 0.05 && b64 * 1.0 / total > 0.9;
+    }
+
     /** 读取卡片日志，返回 [时间, 标题, 动作, 回复, 作者, 想法] */
     /** 读取卡片日志：[类型, 时间, a, b, c, d] */
     private List<String[]> readCards(int max) {
@@ -2162,6 +2180,10 @@ public class MainActivity extends Activity {
                     // B板块名
                     out.add(new String[]{"B", time, head.substring(1), "", "", ""});
                 } else if (head.startsWith("P")) {
+                    String t0 = head.substring(1);
+                    if (isGibberishTitle(t0) || (p.length > 1 && p[1].contains("我的关注"))) {
+                        continue;   // 乱码帖 / 已下线的关注流卡片，不再显示
+                    }
                     // P标题|||动作|||回复|||作者|||想法
                     out.add(new String[]{"P", time, head.substring(1),
                             p.length > 1 ? p[1] : "",
