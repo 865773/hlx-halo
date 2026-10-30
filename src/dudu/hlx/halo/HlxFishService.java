@@ -93,7 +93,6 @@ public class HlxFishService extends Service {
         loadToday();
         startWakeLoop();
         startReplyLoop();
-        startFollowLoop();
         startKeyCheckLoop();
     }
 
@@ -459,6 +458,10 @@ public class HlxFishService extends Service {
                 saveSeen(seen);
                 if (authorId == hlx.uid()) continue;
                 if (hasCommented(hlx, pid, key)) continue;
+                if (isGibberish(title) || isGibberish(detail)) {
+                    log("🙈 乱码帖，跳过：" + pid);
+                    continue;
+                }
 
                 cacheName(authorId, author);
                 String state = "你叫「" + sp.getString("fish_name", "大肥鱼") + "」，标签："
@@ -695,6 +698,25 @@ public class HlxFishService extends Service {
             }
         }
         return out;
+    }
+
+    /** 判断是不是乱码/加密帖（base64 之类），这种不互动 */
+    private boolean isGibberish(String t) {
+        if (t == null) return false;
+        String x = t.trim();
+        if (x.length() < 12) return false;
+        int cjk = 0, b64 = 0, total = 0;
+        for (int i = 0; i < x.length(); i++) {
+            char c = x.charAt(i);
+            if (Character.isWhitespace(c)) continue;
+            total++;
+            if (c >= 0x4E00 && c <= 0x9FFF) cjk++;
+            if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9')
+                    || c == '+' || c == '/' || c == '=') b64++;
+        }
+        if (total == 0) return false;
+        double cjkR = cjk * 1.0 / total, b64R = b64 * 1.0 / total;
+        return cjkR < 0.05 && b64R > 0.9 && x.length() >= 20;
     }
 
     /** 所有操作之间统一 0~15 秒随机间隔 */
@@ -1181,87 +1203,6 @@ public class HlxFishService extends Service {
     }
 
     // ================= 回复（10 秒，24 小时内，双保险） =================
-
-    /** 关注流轮询：关注的人一发帖就去评论（只取最新 5 条） */
-    private void startFollowLoop() {
-        new Thread(() -> {
-            while (running) {
-                try {
-                    int sec = Math.max(10, sp.getInt("follow_poll_sec", 10));
-                    Thread.sleep(sec * 1000L);
-                    if (!running) break;
-                    String key = sp.getString("ai_key", "");
-                    if (key.isEmpty() || !sp.getBoolean("perm_comment", true)) continue;
-                    if (!sp.getBoolean("follow_feed_on", true)) continue;
-                    if (busy) continue;
-                    followFeedPass(new HlxClient(sp), key);
-                } catch (Exception ignored) {}
-            }
-        }).start();
-    }
-
-    /** 判断是不是乱码/加密帖（base64 之类），这种不互动 */
-    private boolean isGibberish(String t) {
-        if (t == null) return false;
-        String x = t.trim();
-        if (x.length() < 12) return false;
-        int cjk = 0, b64 = 0, total = 0;
-        for (int i = 0; i < x.length(); i++) {
-            char c = x.charAt(i);
-            if (Character.isWhitespace(c)) continue;
-            total++;
-            if (c >= 0x4E00 && c <= 0x9FFF) cjk++;
-            if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9')
-                    || c == '+' || c == '/' || c == '=') b64++;
-        }
-        if (total == 0) return false;
-        double cjkR = cjk * 1.0 / total, b64R = b64 * 1.0 / total;
-        return cjkR < 0.05 && b64R > 0.9 && x.length() >= 20;
-    }
-
-    private void followFeedPass(HlxClient hlx, String key) {
-        try {
-            java.util.List<JSONObject> posts = hlx.followFeed(5);
-            if (posts.isEmpty()) return;
-            Set<Long> seen = loadSeen();
-            for (JSONObject p : posts) {
-                long pid = p.optLong("postID", 0);
-                if (pid <= 0) continue;
-                JSONObject au = p.optJSONObject("user");
-                int authorId = au != null ? au.optInt("userID", 0) : 0;
-                if (authorId == hlx.uid()) continue;
-                String key2 = "f" + pid;
-                if (sp.getString("follow_done", "").contains("," + pid + ",")) continue;
-                if (hasCommented(hlx, pid, key)) continue;
-
-                String title = p.optString("title", "");
-                String detail = strip(p.optString("detail", ""));
-                if (detail.length() > 400) detail = detail.substring(0, 400);
-                if (isGibberish(title) || isGibberish(detail) || isGibberish(title + " " + detail)) {
-                    sp.edit().putString("follow_done",
-                            sp.getString("follow_done", ",") + pid + ",").apply();
-                    log("🙈 关注流里这条是乱码/加密内容，跳过：" + pid);
-                    continue;
-                }
-                String author = au != null ? au.optString("nick", "这位") : "这位";
-                String state = "你关注的人在「我的关注」发了新帖：\n【标题】" + title
-                        + "\n【作者】" + author + "(uid=" + authorId + ")\n【正文】"
-                        + (detail.isEmpty() ? "（只有图片）" : detail);
-                JSONObject d = null;
-                for (int i = 0; i < 2 && d == null; i++) {
-                    d = FishBrain.decide(this, key, persona(), sp, state, hlx.postImages(p));
-                }
-                if (d == null) continue;
-                int before = tComment;
-                act(hlx, key, d, 0, "我的关注", pid, authorId, author, title, state);
-                if (tComment > before) {
-                    sp.edit().putString("follow_done",
-                            sp.getString("follow_done", ",") + pid + ",").apply();
-                }
-                randGap();
-            }
-        } catch (Exception ignored) {}
-    }
 
     private void startReplyLoop() {
         new Thread(() -> {
