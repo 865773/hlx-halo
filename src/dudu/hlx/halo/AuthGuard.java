@@ -78,12 +78,24 @@ public final class AuthGuard {
         if (resp == null || resp.trim().isEmpty()) return SOFT;
         if (looksLikeBrokenJson(resp)) return SOFT;
 
-        String lower = resp.toLowerCase(Locale.ROOT);
+        // 只看服务端返回的 msg / message 字段，绝不拿整段响应做关键词匹配
+        // （帖子里、评论里出现“封禁”这类词，不能当成登录失效）
+        String msg = field(resp, "msg");
+        if (msg.isEmpty()) msg = field(resp, "message");
+        String lower = msg.toLowerCase(Locale.ROOT);
+
         for (String w : SOFT_WORDS) {
             if (lower.contains(w.toLowerCase(Locale.ROOT))) return SOFT;
         }
+
+        // 明确未登录：code=103，或 msg 命中封禁/失效类词
+        String code = field(resp, "code");
+        if ("103".equals(code)) {
+            lastWord = "code=103";
+            return HARD;
+        }
         for (String w : HARD_WORDS) {
-            if (resp.contains(w)) {
+            if (msg.contains(w)) {
                 lastWord = w;
                 return HARD;
             }
@@ -123,24 +135,15 @@ public final class AuthGuard {
     }
 
     private static boolean onHardHit(String resp) {
+        // 只要判定为“明确异常”（封禁/未登录/失效…），立刻退出登录，不再等第二次
         long now = System.currentTimeMillis();
-        if (firstHitAt == 0L || now - firstHitAt > WINDOW_MS) {
-            hits = 1;
-            firstHitAt = now;
-            log(PLATFORM + " 首次明确异常，等待确认 1/" + CONFIRM_COUNT
-                    + " 命中词=" + lastWord + " msg=" + brief(resp));
-            return false;
-        }
-        hits++;
-        log(PLATFORM + " 明确异常累计 " + hits + "/" + CONFIRM_COUNT
-                + " 命中词=" + lastWord + " msg=" + brief(resp));
-        if (hits >= CONFIRM_COUNT) {
-            String reason = extractReason(resp);
-            reset();
-            doLogout(reason);
-            return true;
-        }
-        return false;
+        hits = 1;
+        firstHitAt = now;
+        log(PLATFORM + " 明确异常，立即退出登录：命中词=" + lastWord + " msg=" + brief(resp));
+        String reason = extractReason(resp);
+        reset();
+        doLogout(reason);
+        return true;
     }
 
     private static void reset() {
