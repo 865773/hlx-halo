@@ -283,8 +283,7 @@ public class HlxFishService extends Service {
     }
 
     private String persona() {
-        String p = sp.getString("persona", "");
-        return p == null || p.trim().isEmpty() ? FishBrain.PERSONA_DEFAULT : p;
+        return FishBrain.personaText(sp);
     }
 
     // ================= Key 检查（5 分钟） =================
@@ -481,6 +480,13 @@ public class HlxFishService extends Service {
                 }
                 if (d == null) continue;
 
+                // 防机器人：有一定概率这帖只看不动手，像真人一样“划过去”
+                if (!fromOwnerTrigger(state) && random.nextInt(9) == 0) {
+                    log("🤫 这帖划过去了（不互动）");
+                    doneSteps++;
+                    randGap();
+                    continue;
+                }
                 act(hlx, key, d, catId, boardName, pid, authorId, author, title, state);
                 doneSteps++;
                 if (doneSteps >= maxSteps) break;
@@ -701,6 +707,43 @@ public class HlxFishService extends Service {
         return out;
     }
 
+    /** 主人相关的场景不做随机跳过 */
+    private boolean fromOwnerTrigger(String state) {
+        long owner = sp.getLong("owner_uid", 0);
+        if (owner <= 0) return false;
+        return state != null && state.contains("你的主人");
+    }
+
+    /** 评论内容去重：和最近 15 条太像就不发 */
+    private boolean tooSimilar(String text) {
+        if (text == null) return true;
+        String t = text.trim();
+        if (t.isEmpty()) return true;
+        String hist = sp.getString("recent_comments", "");
+        for (String h : hist.split("\n")) {
+            if (h.trim().isEmpty()) continue;
+            if (h.trim().equals(t)) return true;
+            int common = 0;
+            for (int i = 0; i < t.length(); i++) if (h.indexOf(t.charAt(i)) >= 0) common++;
+            if (t.length() > 8 && common * 1.0 / t.length() > 0.85) return true;
+        }
+        return false;
+    }
+
+    private void rememberComment(String text) {
+        if (text == null || text.trim().isEmpty()) return;
+        String hist = sp.getString("recent_comments", "");
+        String[] parts = (text.trim() + "\n" + hist).split("\n");
+        StringBuilder sb = new StringBuilder();
+        int n = 0;
+        for (String x : parts) {
+            if (x.trim().isEmpty()) continue;
+            if (n++ >= 15) break;
+            sb.append(x.trim()).append("\n");
+        }
+        sp.edit().putString("recent_comments", sb.toString()).apply();
+    }
+
     /** 判断是不是乱码/加密帖（base64 之类），这种不互动 */
     private boolean isGibberish(String t) {
         if (t == null) return false;
@@ -892,7 +935,12 @@ public class HlxFishService extends Service {
                         catch (Exception ignored) { text = ""; }
                     }
                     waitCommentGap();
+                    if (!text.isEmpty() && tooSimilar(text)) {
+                        log("🔁 这句和最近说过的太像，换个说法再说（本次跳过）");
+                        break;
+                    }
                     if (!text.isEmpty() && hlx.comment(pid, 0, text)) {
+                        rememberComment(text);
                         tComment++; bump("today_comment");
                         done.add("评论"); commentText = text;
                         markCommented(pid);
