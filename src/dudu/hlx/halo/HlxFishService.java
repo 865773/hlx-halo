@@ -81,6 +81,7 @@ public class HlxFishService extends Service {
     private int petIdx = 0;
     private volatile int lastActDone = 0;
     private volatile String tipSrcText = "";
+    private volatile long tipSrcSeq = 0;
 
     private int tLike, tComment, tFav, tFollow, tTip, tPost;
 
@@ -1114,7 +1115,11 @@ public class HlxFishService extends Service {
                         if (!fromOwner) sc0 = 1;      // 不是主人，只给 1 个
                         String rs0 = d.optString("content", "");
                         if (rs0.trim().length() < 5) rs0 = "谢谢你一直陪我说话";
-                        if (hlx.tipComment(pid, fixedCid, sc0, rs0)) {
+                        // 接口要的 comment_id 其实是楼层序号 seq，不是全局 commentID；
+                        // 传全局 ID 会落到解析失败的第 1 楼（历史老评论）上
+                        long tipTarget = tipSrcSeq > 0 ? tipSrcSeq : fixedCid;
+                        if (tipSrcSeq > 0) log("🎯 打赏目标用楼层号 seq=" + tipSrcSeq);
+                        if (hlx.tipComment(pid, tipTarget, sc0, rs0)) {
                             tTip++; bump("today_tip"); done.add("送葫芦");
                             log("🎁 给这条评论送了 " + sc0 + " 个葫芦");
                             logPost("给 " + (author.isEmpty() ? "这条评论" : author) + " 送了 " + sc0 + " 个葫芦",
@@ -1122,7 +1127,8 @@ public class HlxFishService extends Service {
                             playPet("eat", 130, false, "idle");
                         } else {
                             String err = hlx.lastError();
-                            log("✗ 评论打赏失败（post_id=" + pid + " cid=" + fixedCid + "）：" + err);
+                            log("✗ 评论打赏失败（post_id=" + pid + " cid=" + fixedCid
+                                    + " seq=" + tipSrcSeq + "）：" + err);
                             if (err.contains("送太多") || err.contains("明日再战")) {
                                 sp.edit().putString("tip_block_day", day0).apply();
                                 tipBlockMsg = "今天的葫芦送光啦，明天给你补上";
@@ -1493,6 +1499,7 @@ public class HlxFishService extends Service {
                     if (po != null) pid = po.optLong("postID", 0);
                 }
                 String text = c.optString("text", "");
+                long notifSeq = c.optLong("seq", 0);
                 long ct = c.optLong("createTime", 0);
                 long from = c.optLong("userID", 0);
                 String fromNick = "";
@@ -1605,11 +1612,13 @@ public class HlxFishService extends Service {
                         }
                     } catch (Exception ignored) {}
                     tipSrcText = text == null ? "" : text.trim();
+                    tipSrcSeq = notifSeq;
                     int tipBefore = tTip;
                     try {
                         act(hlx, key, rd, 0, "", pid, (int) from, who, "", "", cid);
                     } catch (Exception ignored) {}
                     tipSrcText = "";
+                    tipSrcSeq = 0;
                     boolean acted = lastActDone > 0;
                     boolean wanted = false;
                     try {
