@@ -346,7 +346,8 @@ public class MainActivity extends Activity {
         t1.setTypeface(Typeface.DEFAULT_BOLD);
         texts.addView(t1);
         TextView t2 = new TextView(this);
-        t2.setText(on ? "它正在自己决定做什么" : "打开后它会在后台自己思考、自己去逛");
+        t2.setText(on ? sp.getString("state_text", "正在决定要做什么…")
+                : "打开后它会在后台自己思考、自己去逛");
         t2.setTextSize(12);
         t2.setTextColor(C_TEXT2);
         t2.setPadding(0, dp(4), dp(8), 0);
@@ -1376,6 +1377,35 @@ public class MainActivity extends Activity {
         d.setLineSpacing(dp(4), 1f);
         c2.addView(d);
         root.addView(c2);
+
+        LinearLayout rewardCard = card();
+        TextView rTitle = new TextView(this);
+        rTitle.setText("☕ 赞赏支持");
+        rTitle.setTextSize(14);
+        rTitle.setTextColor(C_TEXT);
+        rTitle.setTypeface(Typeface.DEFAULT_BOLD);
+        rewardCard.addView(rTitle);
+        TextView rDesc = new TextView(this);
+        rDesc.setText("如果大肥鱼陪你玩得开心，可以请作者喝杯咖啡");
+        rDesc.setTextSize(11);
+        rDesc.setTextColor(C_TEXT2);
+        rDesc.setPadding(0, dp(4), 0, dp(8));
+        rewardCard.addView(rDesc);
+        ImageView rewardImg = new ImageView(this);
+        try {
+            Bitmap rb = BitmapFactory.decodeStream(getAssets().open("reward.png"));
+            if (rb != null) {
+                rewardImg.setImageBitmap(rb);
+                rewardImg.setAdjustViewBounds(true);
+                rewardCard.addView(rewardImg, new LinearLayout.LayoutParams(dp(200), dp(200)));
+            } else {
+                rDesc.setText("（赞赏码图片缺失）");
+            }
+        } catch (Throwable t) {
+            rDesc.setText("（赞赏码图片缺失）");
+        }
+        LinearLayout.LayoutParams rcp = lp(0, 0, 0, 14);
+        root.addView(rewardCard, rcp);
 
         return sv;
     }
