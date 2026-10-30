@@ -1392,19 +1392,45 @@ public class MainActivity extends Activity {
         rDesc.setPadding(0, dp(4), 0, dp(8));
         rewardCard.addView(rDesc);
         ImageView rewardImg = new ImageView(this);
+        final Bitmap rb;
+        Bitmap tmp = null;
         try {
-            Bitmap rb = BitmapFactory.decodeStream(getAssets().open("reward.png"));
-            if (rb != null) {
-                rewardImg.setImageBitmap(rb);
-                rewardImg.setAdjustViewBounds(true);
-                rewardCard.addView(rewardImg, new LinearLayout.LayoutParams(dp(200), dp(200)));
-            } else {
-                rDesc.setText("（赞赏码图片缺失）");
-            }
+            tmp = BitmapFactory.decodeStream(getAssets().open("reward.png"));
         } catch (Throwable t) {
+            tmp = null;
+        }
+        rb = tmp;
+        if (rb != null) {
+            rewardImg.setImageBitmap(rb);
+            rewardImg.setAdjustViewBounds(true);
+            LinearLayout.LayoutParams rip = new LinearLayout.LayoutParams(dp(200), dp(200));
+            rip.topMargin = dp(4);
+            rewardCard.addView(rewardImg, rip);
+            rewardImg.setOnClickListener(v -> {
+                ImageView big = new ImageView(this);
+                big.setImageBitmap(rb);
+                big.setAdjustViewBounds(true);
+                big.setScaleType(ImageView.ScaleType.FIT_CENTER);
+                int w = (int) (getResources().getDisplayMetrics().widthPixels * 0.86);
+                LinearLayout box = new LinearLayout(this);
+                box.setPadding(dp(16), dp(8), dp(16), dp(8));
+                box.addView(big, new LinearLayout.LayoutParams(w, -2));
+                new AlertDialog.Builder(this)
+                        .setTitle("赞赏码")
+                        .setView(box)
+                        .setPositiveButton("关闭", null)
+                        .show();
+            });
+            TextView tipSmall = new TextView(this);
+            tipSmall.setText("点图片可以放大");
+            tipSmall.setTextSize(10);
+            tipSmall.setTextColor(C_TEXT2);
+            tipSmall.setPadding(0, dp(6), 0, 0);
+            rewardCard.addView(tipSmall);
+        } else {
             rDesc.setText("（赞赏码图片缺失）");
         }
-        LinearLayout.LayoutParams rcp = lp(0, 0, 0, 14);
+        LinearLayout.LayoutParams rcp = lp(0, dp(22), 0, 14);
         root.addView(rewardCard, rcp);
 
         return sv;
