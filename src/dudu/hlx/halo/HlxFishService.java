@@ -997,8 +997,13 @@ public class HlxFishService extends Service {
                                     if (ctime >= fuzzyT) { fuzzyT = ctime; fuzzyCid = cid2; }
                                 }
                             }
+                            // 只认原文精确匹配；匹配不到就用通知自带 commentID，
+                            // 绝不再退到“同一人提到葫芦的最新一条”——那会把葫芦送给别的评论
                             if (exactCid > 0) fixedCid = exactCid;
-                            else if (fuzzyCid > 0) fixedCid = fuzzyCid;
+                            else {
+                                fixedCid = replyCid;
+                                log("⚠️ 没找到与通知原文一致的评论，改用通知里的 cid=" + replyCid);
+                            }
                         } catch (Exception ignored) {}
                         if (pid <= 0) {
                             log("✗ 打赏中止：拿不到帖子ID（post_id=0，cid=" + replyCid + "）");
