@@ -51,7 +51,7 @@ public class HlxFishService extends Service {
             "tip", "tip_comment", "tip_user_post", "tip_my_post", "delete_post", "delete_comment",
             "delete_my_post", "unfollow_index", "comment_my_post", "list_self", "signin", "post",
             "goto", "none", "user_info", "user_posts", "like_user_post", "favorite_user_post",
-            "comment_user_post"));
+            "comment_user_post", "favorite_user_favorite"));
     public static final String ACT_ROAM = "dudu.hlx.halo.ROAM";
     public static final String ACT_TESTPOST = "dudu.hlx.halo.TESTPOST";
     public static final String ACT_TESTDRY = "dudu.hlx.halo.TESTDRY";
@@ -954,11 +954,42 @@ public class HlxFishService extends Service {
             if (postId > 0) out.put("post_id", postId);
             if (index >= 0) out.put("post_index", index);
             // target 语义
-            if ("my_post".equals(kind) && index < 0) {
+            if ("my_post".equals(kind)) {
+                String a0m = acts.get(0);
+                if ("comment".equals(a0m)) out.put("actions", new JSONArray().put("comment_my_post"));
+                else if ("tip_user_post".equals(a0m) || "tip".equals(a0m)) {
+                    out.put("actions", new JSONArray().put("tip_my_post"));
+                } else if ("delete_my_post".equals(a0m)) {
+                    out.put("actions", new JSONArray().put("delete_my_post"));
+                }
+                if (index >= 0) out.put("post_index", index);
+            } else if ("favorite".equals(kind) || "favorites".equals(kind)) {
+                if ("favorite".equals(acts.get(0))) {
+                    out.put("actions", new JSONArray().put("favorite_user_favorite"));
+                    out.put("favorite_index", index < 0 ? 0 : index);
+                }
+            } else if ("my_post".equals(kind) && index < 0) {
                 String a0 = acts.get(0);
                 if ("comment".equals(a0)) { out.put("actions", new JSONArray().put("comment_my_post")); }
                 else if ("delete_my_post".equals(a0)) { /* 保持 */ }
                 else if ("tip_user_post".equals(a0)) { out.put("actions", new JSONArray().put("tip_my_post")); }
+            } else if (uid > 0 && uid == sp.getLong("hlx_uid", 0)
+                    && ("comment".equals(acts.get(0)) || "like".equals(acts.get(0))
+                        || "favorite".equals(acts.get(0)))) {
+                // 目标写的是“我自己的 uid” → 当成我自己的帖子处理（不要跑到别人帖子下）
+                String a0me = acts.get(0);
+                if ("comment".equals(a0me)) {
+                    out.put("actions", new JSONArray().put("comment_my_post"));
+                    out.put("post_index", index < 0 ? 0 : index);
+                } else if ("like".equals(a0me)) {
+                    out.put("actions", new JSONArray().put("like_user_post"));
+                    out.put("user_id", (int) uid);
+                    out.put("post_index", index < 0 ? 0 : index);
+                } else {
+                    out.put("actions", new JSONArray().put("favorite_user_post"));
+                    out.put("user_id", (int) uid);
+                    out.put("post_index", index < 0 ? 0 : index);
+                }
             } else if ("user".equals(kind) && uid > 0
                     && ("like".equals(acts.get(0)) || "favorite".equals(acts.get(0)) || "comment".equals(acts.get(0)))) {
                 JSONArray a2 = new JSONArray();
@@ -1305,6 +1336,24 @@ public class HlxFishService extends Service {
                 case "delete_comment": {
                     long dc = d.optLong("comment_id", 0);
                     if (dc > 0 && hlx.deleteComment(dc)) done.add("删评论");
+                    break;
+                }
+                case "favorite_user_favorite": {
+                    int fuid = d.optInt("user_id", authorId);
+                    int fidx = d.optInt("favorite_index", d.optInt("post_index", 0));
+                    try {
+                        java.util.List<JSONObject> fvs = hlx.favorites(fuid, 20);
+                        if (fidx >= 0 && fidx < fvs.size()) {
+                            long fp = fvs.get(fidx).optLong("postID", 0);
+                            if (fp > 0 && !hlx.isFavorited(fp) && hlx.favorite(fp)) {
+                                tFav++; bump("today_favorite");
+                                done.add("收藏他的第" + (fidx + 1) + "个收藏");
+                                logPost("收藏了 @" + author + " 收藏夹里的《"
+                                                + fvs.get(fidx).optString("title", "") + "》",
+                                        "收藏", "", author, think);
+                            }
+                        }
+                    } catch (Exception ignored) {}
                     break;
                 }
                 case "like_user_post":
