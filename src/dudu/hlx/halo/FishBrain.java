@@ -79,10 +79,18 @@ public class FishBrain {
 
     public static String toolDoc(SharedPreferences sp) {
         StringBuilder s = new StringBuilder();
+        s.append("【一句话速查】要点赞->post_like；要收藏->post_favorite；要关注某人->follow_user(带 uid)；"
+                + "要评论->post_comment(带 content)；要送葫芦->tip_comment；这些是对方明确要求时必须给的动作。\\n\\n");
         s.append("【怎么用】下面按场景分组成卡片。挑一张，把 <尖括号> 换成真实值，原样返回这张卡片。\n");
         s.append("一张卡只做一件事；想做多件就把 actions 数组写多个动作名。\n");
         s.append("拿不准就少做，宁可什么都不做，也不要瞎点。\n\n");
         s.append("【A. 看帖时】【B. 跟人打交道】【C. 别人的帖子】【D. 自己的帖子】【E. 社区功能】\n\n");
+        s.append("【新协议（推荐，和卡片二选一）】按结构化意图返回更不容易错：\n");
+        s.append("返回一个 JSON：think 想法、action 动作名、target.kind 目标类型（current 当前帖 / user 配 uid / post 配 post_id / my_post 配 index）、content 评论内容、reason 为什么。\\n");
+        s.append("动作名：post_like / post_unlike / post_favorite / post_unfavorite / post_comment / post_comment_follow / reply_comment / follow_user / unfollow_user / tip_comment / tip_post / delete_my_post / delete_comment / user_info / user_posts / list_self / signin / goto / create_post / none\n");
+        s.append("target.kind：current（这条帖）/ user（配 uid）/ post（配 post_id）/ my_post（配 index）\n");
+        s.append("卡片格式和新协议都能用，选一种写，不要混着来。\n\n");
+
 
         s.append("① 点赞当前帖 / 取消点赞\n作用：给正在看的这条帖子点赞或取消。返回：{\"actions\":[\"like\"]} 或 {\"actions\":[\"unlike\"]}\n\n");
         s.append("② 收藏当前帖 / 取消收藏\n作用：想留着以后看就收藏。返回：{\"actions\":[\"favorite\"]} 或 {\"actions\":[\"unfavorite\"]}\n\n");
@@ -107,6 +115,10 @@ public class FishBrain {
         s.append("【序号规则】post_index / follow_index 从 0 开始：0=第一个（最新）。\n");
         s.append("【送葫芦铁律】葫芦很难得，就是你的大米饭，不能随手送人。① 主人开口要（送葫芦/打赏/给个葫芦）就返回 ⑤ 或 ⑥，一次只送 1 个，理由至少 5 个字；② 别人要，只有你特别特别特别喜欢他（好感度 90 以上）才主动送 1 个，否则笑着打岔、绝不送；③ 一次最多 1 个，别逞大方。\n");
         s.append("【谁能让你做什么】点赞、收藏、关注、评论，谁开口都可以给，不用太计较；删帖子、删评论、取消收藏、取消关注、取消点赞，这些只有主人能做，别人让你做就装没听见或者岔开话题；葫芦按上面的铁律来，普通人不给。\n【自主权】除了对方明确要求的，其余要不要点赞收藏关注评论，你自己看心情决定，没有必须做的事。\n");
+        s.append("【易错对照】想收藏 -> post_favorite；想点赞 -> post_like；想关注人 -> follow_user（带 target.uid=…）；只想看别人主页才用 user_info。\n");
+        s.append("【易错对照】删自己的帖不用先查列表，直接 delete_my_post + target.index（第几个，从 0 开始）。\n");
+        s.append("【易错对照】要评论文案就配 content；只回话不做事就 action=none。\n");
+        s.append("【铁律·照做优先】对方明确让你点赞、收藏、关注、评论、送葫芦，就照做并返回对应动作，别用 none 敷衍；只有权限不允许、或你实在不愿意时才拒绝。\n");
         s.append("【铁律·乱码帖】标题或正文是一串乱码、base64、符号堆的帖子，一律不点赞不评论，直接跳过。\n");
         s.append("【铁律·不重复】同一件事不要反复做：已经关注过的人别再关注，评论过的帖子别再评论。\n");
         s.append("【铁律·看心情】没被明确要求的事，由你自己决定做不做，不做也完全没问题。\n");
@@ -396,7 +408,7 @@ public class FishBrain {
         msgs.put(new JSONObject().put("role", "user").put("content", user));
         body.put("messages", msgs);
         body.put("stream", false);
-        body.put("temperature", 1.15);
+        body.put("temperature", 0.9);
         if (json) body.put("response_format", new JSONObject().put("type", "json_object"));
 
         byte[] data = body.toString().getBytes("UTF-8");
