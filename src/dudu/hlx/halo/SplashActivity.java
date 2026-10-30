@@ -27,6 +27,7 @@ public class SplashActivity extends Activity {
     @Override
     protected void onCreate(Bundle b) {
         super.onCreate(b);
+        StatsReporter.reportAsync(this);
         if (Build.VERSION.SDK_INT >= 21) {
             getWindow().setStatusBarColor(0xFFF6FAFF);
             getWindow().setNavigationBarColor(0xFFF6FAFF);
