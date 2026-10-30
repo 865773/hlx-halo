@@ -2,15 +2,17 @@ package dudu.hlx.halo;
 
 import android.app.Activity;
 import android.content.Intent;
+import android.graphics.BitmapFactory;
 import android.graphics.Color;
 import android.media.MediaPlayer;
-import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.view.Gravity;
-import android.view.View;
+import android.view.ViewGroup;
 import android.widget.FrameLayout;
+import android.widget.ImageView;
+import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.VideoView;
 
@@ -18,7 +20,7 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.io.InputStream;
 
-/** 启动页：播放 boot.mp4，播完或点击跳过进入主页 */
+/** 启动页：竖屏布局里居中播放 boot.mp4（横屏视频不拉伸，加标题和遮罩），播完进主页 */
 public class SplashActivity extends Activity {
 
     private final Handler handler = new Handler(Looper.getMainLooper());
@@ -30,8 +32,43 @@ public class SplashActivity extends Activity {
         FrameLayout root = new FrameLayout(this);
         root.setBackgroundColor(Color.BLACK);
 
+        // 视频：按宽度铺满、16:9 居中，不裁不拉伸
         final VideoView vv = new VideoView(this);
-        root.addView(vv, new FrameLayout.LayoutParams(-1, -1));
+        FrameLayout.LayoutParams vlp = new FrameLayout.LayoutParams(-1, -2);
+        vlp.gravity = Gravity.CENTER;
+        root.addView(vv, vlp);
+
+        // 上下渐变感：底部一块深色条 + 标题
+        LinearLayout bottom = new LinearLayout(this);
+        bottom.setOrientation(LinearLayout.VERTICAL);
+        bottom.setGravity(Gravity.CENTER_HORIZONTAL);
+        bottom.setPadding(0, 0, 0, 90);
+        FrameLayout.LayoutParams blp = new FrameLayout.LayoutParams(-1, -2);
+        blp.gravity = Gravity.BOTTOM;
+        root.addView(bottom, blp);
+
+        ImageView logo = new ImageView(this);
+        try {
+            logo.setImageBitmap(BitmapFactory.decodeStream(getAssets().open("dafeiyu.png")));
+        } catch (Throwable ignored) {}
+        LinearLayout.LayoutParams llp = new LinearLayout.LayoutParams(96, 96);
+        llp.bottomMargin = 14;
+        bottom.addView(logo, llp);
+
+        TextView name = new TextView(this);
+        name.setText("三楼 · 大肥鱼");
+        name.setTextColor(0xEEFFFFFF);
+        name.setTextSize(20);
+        name.setGravity(Gravity.CENTER);
+        bottom.addView(name);
+
+        TextView tip = new TextView(this);
+        tip.setText("正在叫醒它…");
+        tip.setTextColor(0x99FFFFFF);
+        tip.setTextSize(12);
+        tip.setGravity(Gravity.CENTER);
+        tip.setPadding(0, 8, 0, 0);
+        bottom.addView(tip);
 
         TextView skip = new TextView(this);
         skip.setText("跳过 ›");
@@ -61,6 +98,16 @@ public class SplashActivity extends Activity {
             vv.setVideoPath(f.getAbsolutePath());
             vv.setOnPreparedListener((MediaPlayer mp) -> {
                 mp.setLooping(false);
+                // 视频铺满宽度，高度按比例
+                int vw = mp.getVideoWidth(), vh = mp.getVideoHeight();
+                if (vw > 0 && vh > 0) {
+                    int sw = getResources().getDisplayMetrics().widthPixels;
+                    int h = (int) (sw * (vh * 1.0f / vw));
+                    ViewGroup.LayoutParams lp2 = vv.getLayoutParams();
+                    lp2.width = sw;
+                    lp2.height = h;
+                    vv.setLayoutParams(lp2);
+                }
                 vv.start();
             });
             vv.setOnCompletionListener(mp -> go());
@@ -68,22 +115,17 @@ public class SplashActivity extends Activity {
         } catch (Throwable t) {
             go();
         }
-        // 兜底：8 秒还没播完也进主页
-        handler.postDelayed(this::go, 8000);
+        handler.postDelayed(this::go, 9000);
     }
 
     private void go() {
         if (jumped) return;
         jumped = true;
         handler.removeCallbacksAndMessages(null);
-        try {
-            startActivity(new Intent(this, MainActivity.class));
-        } catch (Throwable ignored) {}
+        try { startActivity(new Intent(this, MainActivity.class)); } catch (Throwable ignored) {}
         finish();
     }
 
     @Override
-    public void onBackPressed() {
-        go();
-    }
+    public void onBackPressed() { go(); }
 }
