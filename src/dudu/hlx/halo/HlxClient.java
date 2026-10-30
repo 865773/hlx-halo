@@ -35,6 +35,10 @@ public class HlxClient {
 
     private String lastErr = "";
     public String lastError() { return lastErr; }
+    private int lastCode = 0;
+    private String lastMsg = "";
+    public int lastCode() { return lastCode; }
+    public String lastMsg() { return lastMsg; }
 
     private final SharedPreferences sp;
 
@@ -394,6 +398,20 @@ public class HlxClient {
         return o != null && o.optInt("iscredits", 0) == 1;
     }
 
+    /** 我的关注流（App 的「我的关注」板块，实测 cat_id=0 + 4.2.4） */
+    public List<JSONObject> followFeed(int count) {
+        List<JSONObject> list = new ArrayList<>();
+        JSONObject o = json(httpGet(BASE + "/post/list/ANDROID/4.2.4?" + auth()
+                + "&cat_id=0&tag_id=0&sort_by=0&start=0&count=" + count));
+        if (o == null) return list;
+        JSONArray arr = o.optJSONArray("posts");
+        if (arr != null) for (int i = 0; i < arr.length(); i++) {
+            JSONObject p = arr.optJSONObject(i);
+            if (p != null) list.add(p);
+        }
+        return list;
+    }
+
     /** 互关好友（App 里 @ 弹窗的那个列表） */
     public List<JSONObject> mutualFriends(int count) {
         List<JSONObject> list = new ArrayList<>();
@@ -553,6 +571,12 @@ public class HlxClient {
         String raw2 = httpPost(BASE + "/comment/create/ANDROID/4.1.8?" + auth(), body);
         lastErr = raw2 == null ? "无响应" : (raw2.length() > 160 ? raw2.substring(0, 160) : raw2);
         JSONObject o = json(raw2);
+        if (o != null) {
+            lastCode = o.optInt("code", 0);
+            lastMsg = o.optString("msg", "");
+        } else {
+            lastCode = 0; lastMsg = "无响应";
+        }
         return o != null && (o.optInt("status", 0) == 1);
     }
 
@@ -588,7 +612,9 @@ public class HlxClient {
                 + "&images=" + enc(images)
                 + "&user_ids=&recommendTopics=&remindTopics="
                 + "&sign=" + sign + "&is_app_link=3";
-        return json(httpPost(BASE + "/post/create/ANDROID/4.2.2?" + auth(), body));
+        JSONObject o = json(httpPost(BASE + "/post/create/ANDROID/4.2.2?" + auth(), body));
+        if (o != null) { lastCode = o.optInt("code", 0); lastMsg = o.optString("msg", ""); }
+        return o;
     }
 
     /** 签到（单个板块） */
