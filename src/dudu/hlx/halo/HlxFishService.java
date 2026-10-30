@@ -936,7 +936,17 @@ public class HlxFishService extends Service {
                 }
                 case "unfollow": {
                     int fu2 = d.optInt("user_id", authorId);
-                    if (fu2 > 0 && hlx.unfollow(fu2)) { done.add("取关"); FishMemory.addFavor(sp, fu2, -3); }
+                    if (fu2 > 0 && hlx.unfollow(fu2)) {
+                        done.add("取关");
+                        FishMemory.addFavor(sp, fu2, -3);
+                        java.util.Set<Long> fs2 = followingSet(hlx);
+                        fs2.remove((long) fu2);
+                        StringBuilder sb2 = new StringBuilder();
+                        for (Long x : fs2) { if (sb2.length() > 0) sb2.append(','); sb2.append(x); }
+                        sp.edit().putString("following_cache", sb2.toString())
+                                .putLong("following_at", System.currentTimeMillis())
+                                .remove("follow_ok_" + fu2).apply();
+                    }
                     break;
                 }
                 case "tip_comment": case "tip": {
