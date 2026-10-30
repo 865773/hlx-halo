@@ -50,9 +50,40 @@ public class SplashActivity extends Activity {
         clp.bottomMargin = dp(30);
         root.addView(col, clp);
 
+        // 桌宠背后的柔和圆底
+        FrameLayout petWrap = new FrameLayout(this);
+        View blob = new View(this);
+        GradientDrawable blobBg = new GradientDrawable();
+        blobBg.setShape(GradientDrawable.OVAL);
+        blobBg.setGradientType(GradientDrawable.RADIAL_GRADIENT);
+        blobBg.setGradientRadius(180f);
+        blobBg.setColors(new int[]{0x55A8D8FF, 0x2233A0FF, 0x00FFFFFF});
+        blob.setBackground(blobBg);
+        petWrap.addView(blob, new FrameLayout.LayoutParams(dp(230), dp(230)));
+        ((FrameLayout.LayoutParams) blob.getLayoutParams()).gravity = Gravity.CENTER;
+
         final ImageView pet = new ImageView(this);
         pet.setScaleType(ImageView.ScaleType.FIT_CENTER);
-        col.addView(pet, new LinearLayout.LayoutParams(dp(200), dp(250)));
+        petWrap.addView(pet, new FrameLayout.LayoutParams(dp(200), dp(250)));
+        ((FrameLayout.LayoutParams) pet.getLayoutParams()).gravity = Gravity.CENTER;
+        col.addView(petWrap, new LinearLayout.LayoutParams(dp(240), dp(260)));
+
+        // 三颗小气泡
+        for (int bi = 0; bi < 3; bi++) {
+            View bub = new View(this);
+            GradientDrawable bb = new GradientDrawable();
+            bb.setShape(GradientDrawable.OVAL);
+            bb.setColor(bi == 0 ? 0x667FC8FF : (bi == 1 ? 0x55FFC7E0 : 0x55BBA8FF));
+            bub.setBackground(bb);
+            int size = dp(10 + bi * 6);
+            FrameLayout.LayoutParams blp = new FrameLayout.LayoutParams(size, size);
+            blp.gravity = Gravity.CENTER;
+            blp.leftMargin = dp(bi == 0 ? -96 : (bi == 1 ? 86 : -70));
+            blp.topMargin = dp(bi == 0 ? -120 : (bi == 1 ? -60 : 40));
+            root.addView(bub, blp);
+            bub.setAlpha(0.55f);
+            bubble(bub, bi * 350);
+        }
 
         TextView name = new TextView(this);
         name.setText("三楼 · 大肥鱼");
@@ -64,6 +95,15 @@ public class SplashActivity extends Activity {
         LinearLayout.LayoutParams nlp = new LinearLayout.LayoutParams(-2, -2);
         nlp.topMargin = dp(18);
         col.addView(name, nlp);
+
+        TextView sub = new TextView(this);
+        sub.setText("今天也一起逛三楼呀 ~");
+        sub.setTextColor(0xFF9DB0C7);
+        sub.setTextSize(11);
+        sub.setGravity(Gravity.CENTER);
+        LinearLayout.LayoutParams subLp = new LinearLayout.LayoutParams(-2, -2);
+        subLp.topMargin = dp(8);
+        col.addView(sub, subLp);
 
         // 细进度条
         final FrameLayout barWrap = new FrameLayout(this);
@@ -123,6 +163,16 @@ public class SplashActivity extends Activity {
         if (bm != null) pet.setImageBitmap(bm);
         idx++;
         handler.postDelayed(() -> tick(pet), 130);
+    }
+
+    /** 小气泡慢慢往上飘，飘走再从下面回来 */
+    private void bubble(final View v, int delay) {
+        if (jumped) return;
+        v.setTranslationY(dp(30));
+        v.setAlpha(0.1f);
+        v.animate().translationY(-dp(26)).alpha(0.6f).setStartDelay(delay).setDuration(1800)
+                .withEndAction(() -> v.animate().alpha(0f).setDuration(400)
+                        .withEndAction(() -> { if (!jumped) bubble(v, 200); }).start()).start();
     }
 
     private void floatUp(final View pet) {
