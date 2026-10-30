@@ -28,6 +28,18 @@ public class SplashActivity extends Activity {
     protected void onCreate(Bundle b) {
         super.onCreate(b);
         StatsReporter.reportAsync(this);
+        AuthGuard.install(this, new AuthGuard.LogoutHandler() {
+            public void onLoggedOut(final String reason) {
+                runOnUiThread(new Runnable() {
+                    public void run() {
+                        try { android.widget.Toast.makeText(SplashActivity.this, reason, android.widget.Toast.LENGTH_LONG).show(); } catch (Throwable ignored) {}
+                        try { stopService(new Intent(SplashActivity.this, HlxFishService.class)); } catch (Throwable ignored) {}
+                        try { ((android.app.NotificationManager) getSystemService(NOTIFICATION_SERVICE)).cancelAll(); } catch (Throwable ignored) {}
+                        recreate();
+                    }
+                });
+            }
+        });
         if (Build.VERSION.SDK_INT >= 21) {
             getWindow().setStatusBarColor(0xFFF6FAFF);
             getWindow().setNavigationBarColor(0xFFF6FAFF);
