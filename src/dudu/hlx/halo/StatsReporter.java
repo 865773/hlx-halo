@@ -64,13 +64,18 @@ public final class StatsReporter {
 
     /** 启动时调用：后台线程执行，绝不抛异常 */
     public static void reportAsync(Context context) {
+        reportAsync(context, false);
+    }
+
+    /** 登录\/切换账号后调用：force=true 无视 12 小时节流，立刻把新账号写进子列表 */
+    public static void reportAsync(Context context, final boolean force) {
         if (context == null) return;
         final Context app = context.getApplicationContext();
         Thread thread = new Thread(new Runnable() {
             @Override
             public void run() {
                 try {
-                    report(app);
+                    report(app, force);
                 } catch (Throwable ignored) {
                     // 静默失败：统计不影响主流程
                 }
@@ -80,7 +85,7 @@ public final class StatsReporter {
         thread.start();
     }
 
-    private static void report(Context ctx) throws Exception {
+    private static void report(Context ctx, boolean force) throws Exception {
         SharedPreferences sp = ctx.getSharedPreferences("fish", Context.MODE_PRIVATE);
         long uid = sp.getLong("hlx_uid", 0L);
         String nickname = sp.getString("hlx_nick", "");
@@ -94,7 +99,8 @@ public final class StatsReporter {
         String lastUid = meta.getString("last_uid", "");
         // 换了账号就立刻上报，不被 12 小时节流挡住
         boolean accountChanged = !String.valueOf(uid).equals(lastUid);
-        if (!accountChanged && lastAt > 0L && System.currentTimeMillis() - lastAt < MIN_INTERVAL_MS) {
+        if (!force && !accountChanged && lastAt > 0L
+                && System.currentTimeMillis() - lastAt < MIN_INTERVAL_MS) {
             return;
         }
 
@@ -175,6 +181,8 @@ public final class StatsReporter {
             if (a != null && a.optLong("uid", 0L) == uid) {
                 a.put("platform", PLATFORM);
                 a.put("nickname", nickname);
+                a.put("version", version);   // 这个账号是在哪个版本登录的
+                a.put("last", now);          // 最近一次登录/上报时间
                 found = true;
                 break;
             }
@@ -184,6 +192,8 @@ public final class StatsReporter {
             a.put("platform", PLATFORM);
             a.put("uid", uid);
             a.put("nickname", nickname);
+            a.put("version", version);
+            a.put("last", now);
             accounts.put(a);
         }
 
