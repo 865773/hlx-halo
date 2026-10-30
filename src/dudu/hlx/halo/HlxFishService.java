@@ -724,6 +724,86 @@ public class HlxFishService extends Service {
         try { Thread.sleep(random.nextInt(15_000)); } catch (Exception ignored) {}
     }
 
+    // ================= 协议归一化（新协议 → 内部动作名） =================
+
+    /** 把 halo-desk 风格的结构化意图转成内部动作名，老格式原样返回 */
+    private JSONObject normalize(JSONObject d) {
+        if (d == null) return null;
+        try {
+            JSONArray old = d.optJSONArray("actions");
+            if (old != null && old.length() > 0) return d;      // 已经是老格式
+            String act = d.optString("action", d.optString("act", "")).trim().toLowerCase();
+            if (act.isEmpty()) return d;
+
+            JSONObject t = d.optJSONObject("target");
+            String kind = t == null ? "" : t.optString("kind", "").toLowerCase();
+            long uid = 0, postId = 0;
+            int index = -1;
+            if (t != null) {
+                uid = t.optLong("uid", 0);
+                postId = t.optLong("post_id", t.optLong("postId", 0));
+                index = t.optInt("index", t.optInt("post_index", -1));
+            }
+            if (uid <= 0) uid = d.optLong("uid", d.optLong("user_id", 0));
+            if (postId <= 0) postId = d.optLong("post_id", 0);
+            if (index < 0) index = d.optInt("post_index", d.optInt("index", -1));
+
+            List<String> acts = new ArrayList<>();
+            switch (act) {
+                case "post_like": acts.add("like"); break;
+                case "post_unlike": acts.add("unlike"); break;
+                case "post_favorite": acts.add("favorite"); break;
+                case "post_unfavorite": acts.add("unfavorite"); break;
+                case "post_comment": acts.add("comment"); break;
+                case "post_comment_follow": acts.add("comment"); acts.add("follow"); break;
+                case "reply_comment": acts.add("reply"); break;
+                case "follow_user": acts.add("follow"); break;
+                case "unfollow_user": acts.add("unfollow"); break;
+                case "tip_comment": acts.add("tip"); break;
+                case "tip_post": acts.add("tip_user_post"); break;
+                case "delete_my_post": acts.add("delete_my_post"); break;
+                case "delete_comment": acts.add("delete_comment"); break;
+                case "user_info": acts.add("user_info"); break;
+                case "user_posts": acts.add("user_posts"); break;
+                case "list_self": acts.add("list_self"); break;
+                case "signin": acts.add("signin"); break;
+                case "goto": acts.add("goto"); break;
+                case "create_post": acts.add("post"); break;
+                case "none": acts.add("none"); break;
+                default: acts.add(act); break;                  // 未知就原样交给后面
+            }
+
+            JSONObject out = new JSONObject();
+            out.put("actions", new JSONArray(acts));
+            out.put("think", d.optString("think", d.optString("reason", "")));
+            out.put("content", d.optString("content", d.optString("text", "")));
+            out.put("reply", d.optString("reply", ""));
+            out.put("title", d.optString("title", ""));
+            out.put("score", d.optInt("score", 1));
+            out.put("cat_id", d.optInt("cat_id", 0));
+            if (uid > 0) out.put("user_id", (int) uid);
+            if (postId > 0) out.put("post_id", postId);
+            if (index >= 0) out.put("post_index", index);
+            // target 语义
+            if ("my_post".equals(kind) && index < 0) {
+                String a0 = acts.get(0);
+                if ("comment".equals(a0)) { out.put("actions", new JSONArray().put("comment_my_post")); }
+                else if ("delete_my_post".equals(a0)) { /* 保持 */ }
+                else if ("tip_user_post".equals(a0)) { out.put("actions", new JSONArray().put("tip_my_post")); }
+            } else if ("user".equals(kind) && uid > 0
+                    && ("like".equals(acts.get(0)) || "favorite".equals(acts.get(0)) || "comment".equals(acts.get(0)))) {
+                JSONArray a2 = new JSONArray();
+                String a0 = acts.get(0);
+                a2.put("like".equals(a0) ? "like_user_post"
+                        : "favorite".equals(a0) ? "favorite_user_post" : "comment_user_post");
+                out.put("actions", a2);
+            }
+            return out;
+        } catch (Exception e) {
+            return d;
+        }
+    }
+
     // ================= 执行动作 =================
 
     private void act(HlxClient hlx, String key, JSONObject d, int catId, String boardName,
@@ -734,6 +814,8 @@ public class HlxFishService extends Service {
     /** replyCid>0 时，tip 视为「打赏这条评论」 */
     private void act(HlxClient hlx, String key, JSONObject d, int catId, String boardName,
                      long pid, int authorId, String author, String title, String state, long replyCid) {
+        d = normalize(d);
+        if (d == null) return;
         // 如果它想先查资料/看别人帖子，先查，再把结果丢回去让它继续决定
         if (hasInfoAction(d)) {
             String info = gatherInfo(hlx, d, authorId);
