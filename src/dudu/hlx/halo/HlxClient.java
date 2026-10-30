@@ -54,7 +54,9 @@ public class HlxClient {
             byte[] b = md.digest(s.getBytes("UTF-8"));
             StringBuilder sb = new StringBuilder();
             for (byte x : b) sb.append(String.format("%02x", x));
-            return sb.toString();
+            String resp = sb.toString();
+            AuthGuard.check(resp);
+            return resp;
         } catch (Exception e) {
             return "";
         }
@@ -100,7 +102,9 @@ public class HlxClient {
             String line;
             while ((line = br.readLine()) != null) sb.append(line);
             br.close();
-            return sb.toString();
+            String resp = sb.toString();
+            AuthGuard.check(resp);
+            return resp;
         } catch (Exception e) {
             return "";
         } finally {
@@ -131,7 +135,9 @@ public class HlxClient {
             String line;
             while ((line = br.readLine()) != null) sb.append(line);
             br.close();
-            return sb.toString();
+            String resp = sb.toString();
+            AuthGuard.check(resp);
+            return resp;
         } catch (Exception e) {
             return "";
         } finally {
@@ -153,7 +159,7 @@ public class HlxClient {
 
     /** 是否登录态失效 */
     public static boolean isDead(String resp) {
-        return resp != null && (resp.contains("\"code\":103") || resp.contains("未登录"));
+        return AuthGuard.classify(resp) == AuthGuard.HARD;
     }
 
     // ================= 登录 =================
