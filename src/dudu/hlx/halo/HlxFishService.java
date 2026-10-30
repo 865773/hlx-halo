@@ -80,6 +80,7 @@ public class HlxFishService extends Service {
     private String petState = "idle";
     private int petIdx = 0;
     private volatile int lastActDone = 0;
+    private volatile String tipSrcText = "";
 
     private int tLike, tComment, tFav, tFollow, tTip, tPost;
 
@@ -956,6 +957,11 @@ public class HlxFishService extends Service {
                         break;
                     }
                     String day0 = new SimpleDateFormat("yyyyMMdd", Locale.CHINA).format(new Date());
+                    if (day0.equals(sp.getString("no_credits_day", ""))) {
+                        log("⛔ 今天已确认没葫芦，跳过打赏");
+                        tipBlockMsg = "我兜里没葫芦了，等攒够再给你";
+                        break;
+                    }
                     String lockedList = sp.getString("tip_locked", "");
                     if (lockedList.contains("," + pid + ",")) {
                         log("⛔ 这个帖子之前就锁贴了，跳过打赏");
@@ -972,20 +978,27 @@ public class HlxFishService extends Service {
                         long fixedCid = replyCid;
                         try {
                             List<JSONObject> cs = hlx.comments(pid, 1);
-                            long bestT = -1;
+                            String want = tipSrcText == null ? "" : tipSrcText.trim();
+                            long exactCid = 0, fuzzyCid = 0, fuzzyT = -1;
                             for (JSONObject c : cs) {
                                 JSONObject u = c.optJSONObject("user");
                                 long cuid = u == null ? 0 : u.optLong("userID", 0);
                                 if (cuid != authorId) continue;              // 只认发通知的人
                                 String ct2 = c.optString("text", "");
-                                if (!(ct2.contains("葫芦") || ct2.contains("打赏"))) continue;
-                                long ctime = c.optLong("createTime", 0);
-                                if (ctime >= bestT) {
-                                    bestT = ctime;
-                                    fixedCid = c.optLong("commentID", replyCid);
+                                long cid2 = c.optLong("commentID", 0);
+                                // ① 原文完全一致：这条才是正在要葫芦的评论
+                                if (!want.isEmpty() && ct2.trim().equals(want) && cid2 > 0) {
+                                    exactCid = cid2;
+                                    break;
+                                }
+                                // ② 兜底：同一人提到葫芦的最新一条
+                                if ((ct2.contains("葫芦") || ct2.contains("打赏")) && cid2 > 0) {
+                                    long ctime = c.optLong("createTime", 0);
+                                    if (ctime >= fuzzyT) { fuzzyT = ctime; fuzzyCid = cid2; }
                                 }
                             }
-                            if (bestT < 0) fixedCid = replyCid;              // 没找到就用通知里那条
+                            if (exactCid > 0) fixedCid = exactCid;
+                            else if (fuzzyCid > 0) fixedCid = fuzzyCid;
                         } catch (Exception ignored) {}
                         if (pid <= 0) {
                             log("✗ 打赏中止：拿不到帖子ID（post_id=0，cid=" + replyCid + "）");
@@ -1010,6 +1023,9 @@ public class HlxFishService extends Service {
                             if (err.contains("送太多") || err.contains("明日再战")) {
                                 sp.edit().putString("tip_block_day", day0).apply();
                                 tipBlockMsg = "今天的葫芦送光啦，明天给你补上";
+                            } else if (err.contains("葫芦数不足") || err.contains("余额")) {
+                                sp.edit().putString("no_credits_day", day0).apply();
+                                tipBlockMsg = "我兜里没葫芦了，等攒够再给你";
                             } else if (err.contains("锁定") || err.contains("删除")) {
                                 String lk = sp.getString("tip_locked", ",");
                                 if (!lk.contains("," + pid + ",")) {
@@ -1479,10 +1495,12 @@ public class HlxFishService extends Service {
                             }
                         }
                     } catch (Exception ignored) {}
+                    tipSrcText = text == null ? "" : text.trim();
                     int tipBefore = tTip;
                     try {
                         act(hlx, key, rd, 0, "", pid, (int) from, who, "", "", cid);
                     } catch (Exception ignored) {}
+                    tipSrcText = "";
                     boolean acted = lastActDone > 0;
                     boolean wanted = false;
                     try {
