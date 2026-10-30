@@ -2300,6 +2300,7 @@ public class MainActivity extends Activity {
                             showPage(P_HOME, true);
                         }
                         reportUsage();
+                        try { StatsReporter.reportAsync(this); } catch (Throwable ignored) {}
                         autoSignInIfNeeded();
                     }
                 });
