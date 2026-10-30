@@ -744,6 +744,54 @@ public class HlxFishService extends Service {
         sp.edit().putString("recent_comments", sb.toString()).apply();
     }
 
+    /** 记录一次对某人的回复，并在高频互刷时标记为疑似机器人 */
+    private void replyTick(long uid) {
+        try {
+            String k = "loop_" + uid;
+            String raw = sp.getString(k, "");
+            java.util.ArrayList<Long> ts = new java.util.ArrayList<>();
+            for (String x : raw.split(",")) {
+                try { ts.add(Long.parseLong(x.trim())); } catch (Exception ignored) {}
+            }
+            long now = System.currentTimeMillis();
+            ts.add(now);
+            while (ts.size() > 30) ts.remove(0);
+            StringBuilder sb = new StringBuilder();
+            for (Long t : ts) { if (sb.length() > 0) sb.append(','); sb.append(t); }
+            sp.edit().putString(k, sb.toString()).putLong("bot_last_" + uid, now).apply();
+
+            int cnt = 0;
+            long prev = 0, sumGap = 0;
+            for (Long t : ts) {
+                if (now - t > 10 * 60_000L) continue;
+                if (cnt > 0) sumGap += (t - prev);
+                prev = t;
+                cnt++;
+            }
+            if (cnt >= 8) {
+                long avg = cnt > 1 ? sumGap / (cnt - 1) : 0;
+                if (avg <= 60_000L) {
+                    sp.edit().putLong("bot_" + uid, now)
+                            .putLong("loop_mute_" + uid, now + 30 * 60_000L).apply();
+                    log("⏸ 和 uid=" + uid + " 回复太频繁（10 分钟 " + cnt + " 次，平均 "
+                            + (avg / 1000) + " 秒），按机器人互刷处理，暂停 30 分钟");
+                }
+            }
+        } catch (Exception ignored) {}
+    }
+
+    /** 这个人是不是被判定成机器人/正在熔断 */
+    private boolean botBlocked(long uid) {
+        long now = System.currentTimeMillis();
+        if (now < sp.getLong("loop_mute_" + uid, 0)) return true;
+        long marked = sp.getLong("bot_" + uid, 0);
+        if (marked > 0 && now - marked < 30L * 86400_000L) {
+            long last = sp.getLong("bot_last_" + uid, 0);
+            return now - last < 60L * 60_000L;      // 机器人：一小时最多回一次
+        }
+        return false;
+    }
+
     /** 判断是不是乱码/加密帖（base64 之类），这种不互动 */
     private boolean isGibberish(String t) {
         if (t == null) return false;
@@ -916,10 +964,12 @@ public class HlxFishService extends Service {
             }
             switch (a) {
                 case "like":
-                    if (!hlx.isPraised(pid) && hlx.praise(pid)) { tLike++; bump("today_like"); done.add("点赞"); }
+                    if (hlx.isPraised(pid)) { done.add("已点赞"); }
+                    else if (hlx.praise(pid)) { tLike++; bump("today_like"); done.add("点赞"); }
                     break;
                 case "favorite":
-                    if (!hlx.isFavorited(pid) && hlx.favorite(pid)) { tFav++; bump("today_favorite"); done.add("收藏"); }
+                    if (hlx.isFavorited(pid)) { done.add("已收藏"); }
+                    else if (hlx.favorite(pid)) { tFav++; bump("today_favorite"); done.add("收藏"); }
                     break;
                 case "unfavorite":
                     if (hlx.unfavorite(pid)) done.add("取消收藏");
@@ -1455,6 +1505,11 @@ public class HlxFishService extends Service {
                 if (ct > 0 && ct < cutoff) continue;                 // 冷启动 90 分钟 / 平时 1 天
                 if (hasReplied(hlx, pid, cid, ct)) continue;         // 双保险
                 if (System.currentTimeMillis() < sp.getLong("rt_t_" + cid, 0)) continue;  // 退避中
+                if (botBlocked(from)) {
+                    markReplied(cid);
+                    log("🤖 疑似机器人 uid=" + from + "，这轮不回");
+                    continue;
+                }
 
                 if (!fromNick.isEmpty()) cacheName(from, fromNick);
                 long owner = sp.getLong("owner_uid", 0);
@@ -1530,6 +1585,7 @@ public class HlxFishService extends Service {
                     }
                 }
                 if (sent) {
+                    replyTick(from);
                     sp.edit().remove("rt_" + cid).apply();
                     markReplied(cid);
                     tComment++; bump("today_comment");
