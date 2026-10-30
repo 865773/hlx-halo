@@ -73,6 +73,13 @@ public class HlxFishService extends Service {
     private long lastWake = 0;
     private long lastReply = 0;
 
+    // ===== 桌宠帧动画 =====
+    private final java.util.Map<String, Bitmap[]> petFrames = new java.util.HashMap<>();
+    private final android.os.Handler petHandler = new android.os.Handler(Looper.getMainLooper());
+    private Runnable petTick;
+    private String petState = "idle";
+    private int petIdx = 0;
+
     private int tLike, tComment, tFav, tFollow, tTip, tPost;
 
     @Override
@@ -85,6 +92,7 @@ public class HlxFishService extends Service {
         loadToday();
         startWakeLoop();
         startReplyLoop();
+        startFollowLoop();
         startKeyCheckLoop();
     }
 
@@ -204,6 +212,7 @@ public class HlxFishService extends Service {
                         downX = e.getRawX(); downY = e.getRawY();
                         startX = lp.x; startY = lp.y;
                         downT = System.currentTimeMillis(); moved = false;
+                        playPet("drag", 120, true, null);
                         return true;
                     case MotionEvent.ACTION_MOVE: {
                         float dx = e.getRawX() - downX, dy = e.getRawY() - downY;
@@ -215,15 +224,21 @@ public class HlxFishService extends Service {
                         return true;
                     }
                     case MotionEvent.ACTION_UP:
-                        if (!moved && System.currentTimeMillis() - downT < 400) showToday();
-                        else sp.edit().putInt("fish_x", lp.x).putInt("fish_y", lp.y).apply();
+                        if (!moved && System.currentTimeMillis() - downT < 400) {
+                            playPet("happy", 110, false, "idle");
+                            showToday();
+                        } else {
+                            sp.edit().putInt("fish_x", lp.x).putInt("fish_y", lp.y).apply();
+                            playPet("idle", 140, true, null);
+                        }
                         return true;
                 }
                 return false;
             }
         });
         try { wm.addView(fishView, lp); } catch (Exception ignored) {}
-        fishBreath();
+        loadPetFrames();
+        playPet("idle", 140, true, null);
     }
 
     private void removeFish() {
@@ -608,26 +623,47 @@ public class HlxFishService extends Service {
         sp.edit().putString("replied_cids", sb.toString()).apply();
     }
 
-    /** 挂件呼吸动效：轻微缩放 + 偶尔歪头，像活的一样 */
-    private void fishBreath() {
-        if (fishView == null) return;
-        try {
-            fishView.animate().scaleX(1.06f).scaleY(0.95f).setDuration(880)
-                    .withEndAction(() -> {
-                        if (fishView == null) return;
-                        fishView.animate().scaleX(1f).scaleY(1f).setDuration(880)
-                                .withEndAction(() -> {
-                                    if (random.nextInt(3) == 0) {
-                                        fishView.animate().rotation(6f).setDuration(420)
-                                                .withEndAction(() -> fishView.animate().rotation(-4f).setDuration(500)
-                                                        .withEndAction(() -> fishView.animate().rotation(0f).setDuration(380)
-                                                                .withEndAction(this::fishBreath).start()).start()).start();
-                                    } else {
-                                        fishBreath();
-                                    }
-                                }).start();
-                    }).start();
-        } catch (Exception ignored) {}
+    /** 载入桌宠各状态的帧 */
+    private void loadPetFrames() {
+        if (!petFrames.isEmpty()) return;
+        java.util.Map<String, Integer> groups = new java.util.HashMap<>();
+        groups.put("idle", 10); groups.put("happy", 6); groups.put("angry", 4);
+        groups.put("eat", 4); groups.put("shy", 4); groups.put("drag", 2);
+        for (java.util.Map.Entry<String, Integer> e : groups.entrySet()) {
+            Bitmap[] arr = new Bitmap[e.getValue()];
+            boolean any = false;
+            for (int i = 0; i < arr.length; i++) {
+                try {
+                    arr[i] = BitmapFactory.decodeStream(
+                            getAssets().open("pet/" + e.getKey() + "_" + i + ".png"));
+                    if (arr[i] != null) any = true;
+                } catch (Throwable ignored) {}
+            }
+            if (any) petFrames.put(e.getKey(), arr);
+        }
+    }
+
+    /** 播放某个状态的帧：loop=false 时播完回到 back 状态 */
+    private void playPet(final String state, final int frameMs, final boolean loop, final String back) {
+        final Bitmap[] fr = petFrames.get(state);
+        if (fr == null || fr.length == 0 || fishView == null) return;
+        if (!state.equals(petState)) petIdx = 0;
+        petState = state;
+        if (petTick != null) petHandler.removeCallbacks(petTick);
+        petTick = new Runnable() {
+            @Override public void run() {
+                if (fishView == null) return;
+                Bitmap bm = fr[petIdx % fr.length];
+                if (bm != null) fishView.setImageBitmap(bm);
+                petIdx++;
+                if (!loop && petIdx >= fr.length) {
+                    if (back != null) playPet(back, 140, true, null);
+                    return;
+                }
+                petHandler.postDelayed(this, frameMs);
+            }
+        };
+        petHandler.post(petTick);
     }
 
     /** 我关注的人（本地缓存，30 分钟刷一次） */
@@ -852,6 +888,7 @@ public class HlxFishService extends Service {
                             log("🎁 给这条评论送了 " + sc0 + " 个葫芦");
                             logPost("给 " + (author.isEmpty() ? "这条评论" : author) + " 送了 " + sc0 + " 个葫芦",
                                     "打赏", rs0, author, think);
+                            playPet("eat", 130, false, "idle");
                         } else {
                             String err = hlx.lastError();
                             log("✗ 评论打赏失败（post_id=" + pid + " cid=" + fixedCid + "）：" + err);
@@ -1142,6 +1179,62 @@ public class HlxFishService extends Service {
     }
 
     // ================= 回复（10 秒，24 小时内，双保险） =================
+
+    /** 关注流轮询：关注的人一发帖就去评论（只取最新 5 条） */
+    private void startFollowLoop() {
+        new Thread(() -> {
+            while (running) {
+                try {
+                    int sec = Math.max(10, sp.getInt("follow_poll_sec", 10));
+                    Thread.sleep(sec * 1000L);
+                    if (!running) break;
+                    String key = sp.getString("ai_key", "");
+                    if (key.isEmpty() || !sp.getBoolean("perm_comment", true)) continue;
+                    if (!sp.getBoolean("follow_feed_on", true)) continue;
+                    if (busy) continue;
+                    followFeedPass(new HlxClient(sp), key);
+                } catch (Exception ignored) {}
+            }
+        }).start();
+    }
+
+    private void followFeedPass(HlxClient hlx, String key) {
+        try {
+            java.util.List<JSONObject> posts = hlx.followFeed(5);
+            if (posts.isEmpty()) return;
+            Set<Long> seen = loadSeen();
+            for (JSONObject p : posts) {
+                long pid = p.optLong("postID", 0);
+                if (pid <= 0) continue;
+                JSONObject au = p.optJSONObject("user");
+                int authorId = au != null ? au.optInt("userID", 0) : 0;
+                if (authorId == hlx.uid()) continue;
+                String key2 = "f" + pid;
+                if (sp.getString("follow_done", "").contains("," + pid + ",")) continue;
+                if (hasCommented(hlx, pid, key)) continue;
+
+                String title = p.optString("title", "");
+                String detail = strip(p.optString("detail", ""));
+                if (detail.length() > 400) detail = detail.substring(0, 400);
+                String author = au != null ? au.optString("nick", "这位") : "这位";
+                String state = "你关注的人在「我的关注」发了新帖：\n【标题】" + title
+                        + "\n【作者】" + author + "(uid=" + authorId + ")\n【正文】"
+                        + (detail.isEmpty() ? "（只有图片）" : detail);
+                JSONObject d = null;
+                for (int i = 0; i < 2 && d == null; i++) {
+                    d = FishBrain.decide(this, key, persona(), sp, state, hlx.postImages(p));
+                }
+                if (d == null) continue;
+                int before = tComment;
+                act(hlx, key, d, 0, "我的关注", pid, authorId, author, title, state);
+                if (tComment > before) {
+                    sp.edit().putString("follow_done",
+                            sp.getString("follow_done", ",") + pid + ",").apply();
+                }
+                randGap();
+            }
+        } catch (Exception ignored) {}
+    }
 
     private void startReplyLoop() {
         new Thread(() -> {
