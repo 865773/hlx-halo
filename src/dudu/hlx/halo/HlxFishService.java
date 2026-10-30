@@ -953,6 +953,19 @@ public class HlxFishService extends Service {
             int doneBefore = done.size();
             a = a == null ? "" : a.trim().toLowerCase();
             if (a.isEmpty() || "none".equals(a) || "goto".equals(a) || "read".equals(a)) continue;
+            // 权限开关真正生效（之前只有 tip/post/signin 检查，点赞/收藏/关注/评论是漏的）
+            String permKey = null;
+            switch (a) {
+                case "like": case "unlike": permKey = "perm_like"; break;
+                case "favorite": case "unfavorite": permKey = "perm_favorite"; break;
+                case "follow": case "unfollow": case "unfollow_index": permKey = "perm_follow"; break;
+                case "comment": case "comment_my_post": case "comment_user_post": permKey = "perm_comment"; break;
+                case "reply": permKey = "perm_reply"; break;
+            }
+            if (permKey != null && !sp.getBoolean(permKey, true)) {
+                log("⛔ 权限没开（" + permKey + "），跳过「" + a + "」");
+                continue;
+            }
             boolean isTipAct = a.startsWith("tip");
             if (!fromOwner && ownerOnly.contains(a)) {
                 log("⛔ 「" + a + "」只有主人能做，" + (author.isEmpty() ? ("uid=" + authorId) : author) + " 要求已忽略");
@@ -1074,74 +1087,50 @@ public class HlxFishService extends Service {
                         break;
                     }
                     if (replyCid > 0) {
-                        // 找到「哪条评论在要葫芦」= 发通知者发的、文本里提到葫芦/打赏的那条
-                        long fixedCid = replyCid;
+                        // 评论打赏接口会串楼（落到第 1 楼老评论），实测不可靠：
+                        // 改成打赏“对方最新的帖子”，葫芦一定能进对方账号
+                        long targetPost = 0;
+                        String targetTitle = "";
                         try {
-                            List<JSONObject> cs = hlx.comments(pid, 1);
-                            String want = tipSrcText == null ? "" : tipSrcText.trim();
-                            long exactCid = 0, fuzzyCid = 0, fuzzyT = -1;
-                            for (JSONObject c : cs) {
-                                JSONObject u = c.optJSONObject("user");
-                                long cuid = u == null ? 0 : u.optLong("userID", 0);
-                                if (cuid != authorId) continue;              // 只认发通知的人
-                                String ct2 = c.optString("text", "");
-                                long cid2 = c.optLong("commentID", 0);
-                                // ① 原文完全一致：这条才是正在要葫芦的评论
-                                if (!want.isEmpty() && ct2.trim().equals(want) && cid2 > 0) {
-                                    exactCid = cid2;
-                                    break;
+                            java.util.List<JSONObject> ups = hlx.userPosts(authorId, 5);
+                            if (ups != null) {
+                                for (JSONObject up : ups) {
+                                    long pp = up.optLong("postID", 0);
+                                    if (pp > 0) { targetPost = pp; targetTitle = up.optString("title", ""); break; }
                                 }
-                                // ② 兜底：同一人提到葫芦的最新一条
-                                if ((ct2.contains("葫芦") || ct2.contains("打赏")) && cid2 > 0) {
-                                    long ctime = c.optLong("createTime", 0);
-                                    if (ctime >= fuzzyT) { fuzzyT = ctime; fuzzyCid = cid2; }
-                                }
-                            }
-                            // 只认原文精确匹配；匹配不到就用通知自带 commentID，
-                            // 绝不再退到“同一人提到葫芦的最新一条”——那会把葫芦送给别的评论
-                            if (exactCid > 0) fixedCid = exactCid;
-                            else {
-                                fixedCid = replyCid;
-                                log("⚠️ 没找到与通知原文一致的评论，改用通知里的 cid=" + replyCid);
                             }
                         } catch (Exception ignored) {}
-                        if (pid <= 0) {
-                            log("✗ 打赏中止：拿不到帖子ID（post_id=0，cid=" + replyCid + "）");
-                            done.add("打赏失败");
+                        if (targetPost <= 0) {
+                            log("⛔ 对方还没有帖子，取消打赏（cid=" + replyCid + "）");
+                            tipBlockMsg = "你还没有帖子可以收葫芦呀";
                             break;
                         }
                         int sc0 = d.optInt("score", 1);
                         if (sc0 < 1) sc0 = 1;
                         if (sc0 > 5) sc0 = 5;
-                        if (!fromOwner) sc0 = 1;      // 不是主人，只给 1 个
+                        if (!fromOwner) sc0 = 1;
                         String rs0 = d.optString("content", "");
                         if (rs0.trim().length() < 5) rs0 = "谢谢你一直陪我说话";
-                        // 接口要的 comment_id 其实是楼层序号 seq，不是全局 commentID；
-                        // 传全局 ID 会落到解析失败的第 1 楼（历史老评论）上
-                        long tipTarget = tipSrcSeq > 0 ? tipSrcSeq : fixedCid;
-                        if (tipSrcSeq > 0) log("🎯 打赏目标用楼层号 seq=" + tipSrcSeq);
-                        if (hlx.tipComment(pid, tipTarget, sc0, rs0)) {
+                        if (hlx.tip(targetPost, sc0, rs0)) {
                             tTip++; bump("today_tip"); done.add("送葫芦");
-                            log("🎁 给这条评论送了 " + sc0 + " 个葫芦");
-                            logPost("给 " + (author.isEmpty() ? "这条评论" : author) + " 送了 " + sc0 + " 个葫芦",
+                            log("🎁 给 @" + author + " 的帖子《" + targetTitle + "》送了 " + sc0
+                                    + " 个葫芦（post=" + targetPost + " 作者=" + authorId
+                                    + " cid=" + replyCid + " seq=" + tipSrcSeq + " score=" + sc0 + "）");
+                            logPost("给 @" + author + " 的帖子《" + targetTitle + "》送了 " + sc0 + " 个葫芦",
                                     "打赏", rs0, author, think);
                             playPet("eat", 130, false, "idle");
                         } else {
                             String err = hlx.lastError();
-                            log("✗ 评论打赏失败（post_id=" + pid + " cid=" + fixedCid
-                                    + " seq=" + tipSrcSeq + "）：" + err);
-                            if (err.contains("送太多") || err.contains("明日再战")) {
-                                sp.edit().putString("tip_block_day", day0).apply();
-                                tipBlockMsg = "今天的葫芦送光啦，明天给你补上";
-                            } else if (err.contains("葫芦数不足") || err.contains("余额")) {
+                            log("✗ 帖子打赏失败（post=" + targetPost + " cid=" + replyCid
+                                    + " seq=" + tipSrcSeq + " score=" + sc0 + "）：" + err);
+                            if (err.contains("葫芦数不足") || err.contains("余额")) {
                                 sp.edit().putString("no_credits_day", day0).apply();
                                 tipBlockMsg = "我兜里没葫芦了，等攒够再给你";
                             } else if (err.contains("锁定") || err.contains("删除")) {
-                                String lk = sp.getString("tip_locked", ",");
-                                if (!lk.contains("," + pid + ",")) {
-                                    sp.edit().putString("tip_locked", lk + pid + ",").apply();
-                                }
-                                tipBlockMsg = "这个帖子被锁了，送不进去呀";
+                                tipBlockMsg = "那个帖子被锁了，送不进去呀";
+                            } else if (err.contains("送太多") || err.contains("明日再战")) {
+                                sp.edit().putString("tip_block_day", day0).apply();
+                                tipBlockMsg = "今天的葫芦送光啦，明天给你补上";
                             } else {
                                 tipBlockMsg = "诶…葫芦好像没送出去";
                             }
