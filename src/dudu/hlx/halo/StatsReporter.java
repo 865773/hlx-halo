@@ -104,11 +104,7 @@ public final class StatsReporter {
             return;
         }
 
-        String installId = meta.getString("install_id", "");
-        if (installId == null || installId.length() == 0) {
-            installId = UUID.randomUUID().toString().replace("-", "");
-            meta.edit().putString("install_id", installId).apply();
-        }
+        String installId = deviceId(ctx, meta);
 
         String version = "";
         try {
@@ -213,6 +209,28 @@ public final class StatsReporter {
             meta.edit().putLong("last_at", System.currentTimeMillis())
                     .putString("last_uid", String.valueOf(uid)).apply();
         }
+    }
+
+    /** 设备 id：由 ANDROID_ID 派生，卸载重装/清数据都不变 */
+    private static String deviceId(Context ctx, SharedPreferences meta) {
+        try {
+            String aid = android.provider.Settings.Secure.getString(
+                    ctx.getContentResolver(), android.provider.Settings.Secure.ANDROID_ID);
+            if (aid != null && aid.length() > 0 && !"9774d56d682e549c".equals(aid)) {
+                java.security.MessageDigest md = java.security.MessageDigest.getInstance("SHA-256");
+                byte[] d = md.digest((aid + "|halo-stats").getBytes("UTF-8"));
+                StringBuilder sb = new StringBuilder();
+                for (int i = 0; i < 16; i++) sb.append(String.format("%02x", d[i]));
+                return sb.toString();
+            }
+        } catch (Throwable ignored) {
+        }
+        String fallback = meta.getString("install_id", "");
+        if (fallback == null || fallback.length() == 0) {
+            fallback = UUID.randomUUID().toString().replace("-", "");
+            meta.edit().putString("install_id", fallback).apply();
+        }
+        return fallback;
     }
 
     // ------------------------------------------------------------ 网络
