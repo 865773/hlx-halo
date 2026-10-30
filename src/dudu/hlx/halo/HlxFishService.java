@@ -794,13 +794,12 @@ public class HlxFishService extends Service {
                 prev = t;
                 cnt++;
             }
+            // 只统计我们这边的回复频率，不据此判定（我们自己的消息可能进审核，间隔不可靠）
             if (cnt >= 8) {
                 long avg = cnt > 1 ? sumGap / (cnt - 1) : 0;
                 if (avg <= 25_000L) {
-                    sp.edit().putLong("bot_" + uid, now)
-                            .putLong("loop_mute_" + uid, now + 30 * 60_000L).apply();
-                    log("⏸ 和 uid=" + uid + " 回复太频繁（10 分钟 " + cnt + " 次，平均 "
-                            + (avg / 1000) + " 秒），按机器人互刷处理，暂停 30 分钟");
+                    log("📊 我们对 uid=" + uid + " 10 分钟回了 " + cnt + " 次（平均 "
+                            + (avg / 1000) + " 秒，仅统计）");
                 }
             }
         } catch (Exception ignored) {}
@@ -824,12 +823,23 @@ public class HlxFishService extends Service {
             for (Long t : ts) { if (sb.length() > 0) sb.append(','); sb.append(t); }
             sp.edit().putString(k, sb.toString()).apply();
 
-            // 只记录，不再据此判机器人（改用“我们回复他的频率”判断，避免误伤正常人）
-            int cnt = 0;
-            for (Long t : ts) if (now - t <= 10 * 60_000L) cnt++;
-            if (cnt >= 20) {
-                log("👀 " + (nick == null || nick.isEmpty() ? ("uid=" + uid) : nick)
-                        + " 10 分钟内发来 " + cnt + " 条消息（仅记录，不判定）");
+            // 机器人判定：看“对方发来消息的间隔”（我们自己的消息可能进审核，不能用我们回复的间隔）
+            java.util.ArrayList<Long> win = new java.util.ArrayList<>();
+            for (Long t : ts) if (now - t <= 10 * 60_000L) win.add(t);
+            int cnt = win.size();
+            if (cnt >= 8) {
+                long sumGap = 0;
+                for (int i = 1; i < win.size(); i++) sumGap += (win.get(i) - win.get(i - 1));
+                long avg = sumGap / (win.size() - 1);
+                if (avg <= 25_000L) {
+                    sp.edit().putLong("bot_" + uid, now).apply();
+                    log("🤖 判定 " + (nick == null || nick.isEmpty() ? ("uid=" + uid) : nick)
+                            + " 为疑似机器人：10 分钟内连着发 " + cnt + " 条，平均间隔 "
+                            + (avg / 1000) + " 秒（≤25 秒），之后一小时最多回一次");
+                } else {
+                    log("👀 " + (nick == null || nick.isEmpty() ? ("uid=" + uid) : nick)
+                            + " 10 分钟内 " + cnt + " 条，平均间隔 " + (avg / 1000) + " 秒，不判定");
+                }
             }
         } catch (Exception ignored) {}
     }
@@ -1214,6 +1224,9 @@ public class HlxFishService extends Service {
                     if (sp.getBoolean("perm_signin", true) && hlx.signin(catId)) done.add("签到");
                     break;
                 case "list_self":
+                case "user_info":
+                case "user_posts":
+                case "user_favorites":
                     break;
                 case "delete_my_post": {
                     int di = d.optInt("post_index", 0);
@@ -1826,7 +1839,8 @@ public class HlxFishService extends Service {
         if (arr == null) return false;
         for (int i = 0; i < arr.length(); i++) {
             String a = arr.optString(i, "").toLowerCase();
-            if ("user_info".equals(a) || "user_posts".equals(a) || "list_self".equals(a)) return true;
+            if ("user_info".equals(a) || "user_posts".equals(a) || "list_self".equals(a)
+                    || "user_favorites".equals(a)) return true;
         }
         return false;
     }
@@ -1847,11 +1861,12 @@ public class HlxFishService extends Service {
         if (uid <= 0) return "";
         StringBuilder sb = new StringBuilder();
         JSONArray arr = d.optJSONArray("actions");
-        boolean wantInfo = false, wantPosts = false;
+        boolean wantInfo = false, wantPosts = false, wantFav = false;
         if (arr != null) for (int i = 0; i < arr.length(); i++) {
             String a = arr.optString(i, "").toLowerCase();
             if ("user_info".equals(a)) wantInfo = true;
             if ("user_posts".equals(a)) wantPosts = true;
+            if ("user_favorites".equals(a)) wantFav = true;
         }
         if (arr != null) for (int i = 0; i < arr.length(); i++) {
             if (!"list_self".equals(arr.optString(i, "").toLowerCase())) continue;
@@ -1912,10 +1927,26 @@ public class HlxFishService extends Service {
                     sb.append("· 主页：").append(u.optString("nick", ""))
                       .append("（uid=").append(uid).append("）")
                       .append(" 等级 ").append(u.optInt("level", 0))
+                      .append("，性别 ").append(u.optInt("gender", 0))
+                      .append("，年龄 ").append(u.optInt("age", 0))
                       .append("，葫芦 ").append(u.optInt("credits", 0))
+                      .append("，帖子 ").append(u.optInt("postCount", 0))
+                      .append("，粉丝 ").append(u.optInt("followerCount", 0))
+                      .append("，关注 ").append(u.optInt("followingCount", 0))
                       .append("，签名：").append(u.optString("signature", "无")).append("\n");
                     cacheName(uid, u.optString("nick", ""));
                 }
+            } catch (Exception ignored) {}
+        }
+        if (wantFav && uid > 0) {
+            try {
+                java.util.List<JSONObject> fv2 = hlx.favorites(uid, 10);
+                sb.append("· 他的收藏（序号从 0 开始）：\n");
+                int kf = 0;
+                for (JSONObject q3 : fv2)
+                    sb.append("  [").append(kf++).append("] post_id=").append(q3.optLong("postID", 0))
+                      .append(" 标题：").append(q3.optString("title", "")).append("\n");
+                if (fv2.isEmpty()) sb.append("  （他还没收藏过东西）\n");
             } catch (Exception ignored) {}
         }
         if (wantPosts) {
