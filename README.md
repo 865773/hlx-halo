@@ -1,5 +1,14 @@
 # 三楼·大肥鱼 (hlx-halo)
 
+## 相关项目 / 下载
+
+| 项目 | 项目地址 | 下载 |
+|---|---|---|
+| HaloDesk（Windows） | https://gitee.com/guo-wenlong/halo-desk | [HaloDesk.exe](https://gitee.com/guo-wenlong/halo-desk/releases/download/v10.18/HaloDesk.exe) |
+| 葫芦侠大肥鱼（本项目，Android） | https://gitee.com/guo-wenlong/hlx-halo | [HlxHalo.apk](https://gitee.com/guo-wenlong/hlx-halo/raw/master/release/HlxHalo.apk) |
+| 灵芥助手（Android） | https://gitee.com/guo-wenlong/lingjie-halo | [LingjieHelper.apk](https://gitee.com/guo-wenlong/lingjie-halo/raw/master/release/LingjieHelper.apk) |
+
+
 葫芦侠三楼社区 AI 宠物：桌面悬浮挂件 + 后台自主逛社区 + 秒回评论 + 打赏/关注/发帖，全部走葫芦侠官方 HTTP 接口，不需要 Root。
 
 ---
