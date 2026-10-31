@@ -80,6 +80,7 @@ public class HlxFishService extends Service {
     private String petState = "idle";
     private int petIdx = 0;
     private volatile int lastActDone = 0;
+    private android.os.PowerManager.WakeLock wakeLock;
     private volatile String tipSrcText = "";
     private volatile long tipSrcSeq = 0;
 
@@ -91,6 +92,14 @@ public class HlxFishService extends Service {
         sp = getSharedPreferences("fish", MODE_PRIVATE);
         lastWake = sp.getLong("last_wake_at", 0);   // 跨重启保持唤醒间隔
         startForegroundNotice();
+        try {
+            android.os.PowerManager pm = (android.os.PowerManager) getSystemService(POWER_SERVICE);
+            if (pm != null) {
+                wakeLock = pm.newWakeLock(android.os.PowerManager.PARTIAL_WAKE_LOCK, "hlx:fish");
+                wakeLock.setReferenceCounted(false);
+                wakeLock.acquire();          // 常驻轻量唤醒锁：息屏后也能继续跑
+            }
+        } catch (Throwable ignored) {}
         addFish();
         loadToday();
         releaseStaleClaims();
@@ -140,6 +149,7 @@ public class HlxFishService extends Service {
 
     @Override
     public void onDestroy() {
+        try { if (wakeLock != null && wakeLock.isHeld()) wakeLock.release(); } catch (Throwable ignored) {}
         running = false;
         removeFish();
         super.onDestroy();
@@ -370,6 +380,7 @@ public class HlxFishService extends Service {
             genLife();
 
             sp.edit().putString("state_text", "正在决定要做什么…").apply();
+            try { if (wakeLock != null) wakeLock.acquire(10 * 60_000L); } catch (Throwable ignored) {}
             int round = sp.getInt("round_today", 0) + 1;
             sp.edit().putInt("round_today", round).apply();
 
@@ -632,7 +643,7 @@ public class HlxFishService extends Service {
                 long ts = v instanceof Long ? (Long) v : 0;
                 long cid = 0;
                 try { cid = Long.parseLong(k.substring(6)); } catch (Exception ignored) {}
-                if (cid > 0 && now - ts > 3 * 60_000L) {
+                if (cid > 0 && now - ts > 24 * 3600_000L) {
                     unmarkReplied(cid);
                     sp.edit().remove(k).apply();
                     n++;
@@ -1701,9 +1712,8 @@ public class HlxFishService extends Service {
                 try {
                     sent = hlx.comment(pid, cid, reply);
                 } catch (Exception ex) {
-                    log("✗ 发送回复异常（cid=" + cid + "）：" + ex);
-                    unmarkReplied(cid);
-                    sp.edit().remove("claim_" + cid).apply();
+                    // 可能服务端其实已经收下了（超时/断连），为了不重复回复，保留认领
+                    log("✗ 发送回复异常（cid=" + cid + "）：" + ex + "，保留认领不重发");
                     continue;
                 }
                 if (!sent) {
