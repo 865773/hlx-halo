@@ -136,19 +136,10 @@ public final class StatsReporter {
             }
         }
 
-        // 远端文件是否真的存在：这是唯一可靠的“要不要写”的判断
+        // 不做节流：每次打开应用都上报，保证账号/版本变化能立刻反映到统计里
         boolean remoteExists = sha.length() > 0;
         if (!remoteExists) {
-            Log.w("Stats", "远端文件不存在（空数组/无 sha），忽略节流，立即创建");
-        } else {
-            long lastAt = meta.getLong("last_at", 0L);
-            String lastUid = meta.getString("last_uid", "");
-            boolean accountChanged = !String.valueOf(uid).equals(lastUid);
-            if (!force && !accountChanged && lastAt > 0L
-                    && System.currentTimeMillis() - lastAt < MIN_INTERVAL_MS) {
-                Log.d("Stats", "远端存在且 12 小时内，跳过本次上报");
-                return;
-            }
+            Log.w("Stats", "远端文件不存在（空数组/无 sha），立即创建");
         }
 
         // 2) 找到本设备记录并更新
