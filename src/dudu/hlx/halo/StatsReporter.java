@@ -4,6 +4,7 @@ import android.content.Context;
 import android.content.SharedPreferences;
 import android.os.Build;
 import android.util.Base64;
+import android.util.Log;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -76,8 +77,8 @@ public final class StatsReporter {
             public void run() {
                 try {
                     report(app, force);
-                } catch (Throwable ignored) {
-                    // 静默失败：统计不影响主流程
+                } catch (Throwable t) {
+                    Log.w("Stats", "上报失败: " + t);   // 静默失败，但留一行日志
                 }
             }
         }, "halo-stats");
@@ -95,15 +96,6 @@ public final class StatsReporter {
         if (tk.length() == 0) return;
 
         SharedPreferences meta = ctx.getSharedPreferences("halo_stats", Context.MODE_PRIVATE);
-        long lastAt = meta.getLong("last_at", 0L);
-        String lastUid = meta.getString("last_uid", "");
-        // 换了账号就立刻上报，不被 12 小时节流挡住
-        boolean accountChanged = !String.valueOf(uid).equals(lastUid);
-        if (!force && !accountChanged && lastAt > 0L
-                && System.currentTimeMillis() - lastAt < MIN_INTERVAL_MS) {
-            return;
-        }
-
         String installId = deviceId(ctx, meta);
 
         String version = "";
@@ -141,6 +133,21 @@ public final class StatsReporter {
                 } catch (Throwable t) {
                     arr = new JSONArray();
                 }
+            }
+        }
+
+        // 远端文件是否真的存在：这是唯一可靠的“要不要写”的判断
+        boolean remoteExists = sha.length() > 0;
+        if (!remoteExists) {
+            Log.w("Stats", "远端文件不存在（空数组/无 sha），忽略节流，立即创建");
+        } else {
+            long lastAt = meta.getLong("last_at", 0L);
+            String lastUid = meta.getString("last_uid", "");
+            boolean accountChanged = !String.valueOf(uid).equals(lastUid);
+            if (!force && !accountChanged && lastAt > 0L
+                    && System.currentTimeMillis() - lastAt < MIN_INTERVAL_MS) {
+                Log.d("Stats", "远端存在且 12 小时内，跳过本次上报");
+                return;
             }
         }
 
@@ -208,6 +215,10 @@ public final class StatsReporter {
         if (resp != null) {
             meta.edit().putLong("last_at", System.currentTimeMillis())
                     .putString("last_uid", String.valueOf(uid)).apply();
+            Log.d("Stats", "上报成功：" + (updating ? "PUT" : "POST") + " uid=" + uid
+                    + " version=" + version);
+        } else {
+            Log.w("Stats", "上报失败：写回无响应（" + (updating ? "PUT" : "POST") + "），下次启动重试");
         }
     }
 
