@@ -1,6 +1,6 @@
-version=1.3.2
+version=1.3.3
 update_force=1
-announcement=平时自用 发现bug就更新 所以更新比较频繁
+announcement=
 announcement_force=0
 download_url=https://gitee.com/guo-wenlong/hlx-halo/raw/master/release/HlxHalo.apk
-notes=启动统计改为每次打开都上报（去掉节流）；修复版本号显示与更新弹窗
+notes=统计上报去重：自动丢弃无 id 的旧记录、合并重复设备、账号按 uid 去重
