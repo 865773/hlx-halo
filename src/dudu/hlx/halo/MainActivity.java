@@ -84,7 +84,6 @@ public class MainActivity extends Activity {
             getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR);
         if (sp.getString("hlx_key", "").isEmpty()) { showLogin(); return; }
         buildShell();
-        reportUsage();
         autoRestoreFish();
         autoSignInIfNeeded();
         handler.postDelayed(() -> { try { checkUpdate(false); } catch (Exception ignored) {} }, 1500);
@@ -2299,8 +2298,6 @@ public class MainActivity extends Activity {
                         } else {
                             showPage(P_HOME, true);
                         }
-                        reportUsage();
-                        try { StatsReporter.reportAsync(this); } catch (Throwable ignored) {}
                         autoSignInIfNeeded();
                     }
                 });
@@ -2421,56 +2418,8 @@ public class MainActivity extends Activity {
 
     /** 上报使用统计：只记 uid / 昵称 / 机型 / 时间 */
     private void reportUsage() {
-        final long uid = sp.getLong("hlx_uid", 0);
-        if (uid <= 0) return;
-        new Thread(() -> {
-            try {
-                String api = "https://gitee.com/api/v5/repos/" + BuildConfig.STATS_REPO
-                        + "/contents/" + BuildConfig.STATS_FILE + "?access_token=" + BuildConfig.GITEE_TOKEN;
-                String r = httpGet(api);
-                JSONArray arr = new JSONArray();
-                String sha = "";
-                if (r != null && r.trim().startsWith("{")) {
-                    JSONObject o = new JSONObject(r);
-                    sha = o.optString("sha", "");
-                    String b64 = o.optString("content", "").replace("\\n", "").replace("\\r", "");
-                    if (!b64.isEmpty()) {
-                        String inner = "";
-                        try {
-                            inner = new String(android.util.Base64.decode(b64, android.util.Base64.DEFAULT), "UTF-8").trim();
-                        } catch (Exception ignored) {}
-                        String json = inner;
-                        try {
-                            json = new String(android.util.Base64.decode(inner, android.util.Base64.DEFAULT), "UTF-8");
-                        } catch (Exception ignored) {}
-                        try {
-                            arr = new JSONArray(json);
-                        } catch (Exception ignored) {
-                            arr = new JSONArray();
-                        }
-                    }
-                }
-                for (int i = 0; i < arr.length(); i++) {
-                    JSONObject u = arr.optJSONObject(i);
-                    if (u != null && u.optLong("uid", 0) == uid) return;
-                }
-                JSONObject me = new JSONObject();
-                me.put("uid", uid);
-                me.put("nickname", sp.getString("hlx_nick", ""));
-                me.put("device", Build.MODEL + " / Android " + Build.VERSION.RELEASE);
-                me.put("first", new SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.CHINA).format(new Date()));
-                arr.put(me);
-                String inner = android.util.Base64.encodeToString(arr.toString().getBytes("UTF-8"), android.util.Base64.NO_WRAP);
-                String outer = android.util.Base64.encodeToString(inner.getBytes("UTF-8"), android.util.Base64.NO_WRAP);
-                JSONObject body = new JSONObject();
-                body.put("access_token", BuildConfig.GITEE_TOKEN);
-                body.put("content", outer);
-                body.put("message", "update stats");
-                if (!sha.isEmpty()) body.put("sha", sha);
-                httpSend("https://gitee.com/api/v5/repos/" + BuildConfig.STATS_REPO
-                        + "/contents/" + BuildConfig.STATS_FILE, body.toString(), sha.isEmpty() ? "POST" : "PUT");
-            } catch (Exception ignored) {}
-        }).start();
+        // 旧的扁平格式上报（无 id 的设备行）已废弃，统一走 StatsReporter
+        try { StatsReporter.reportAsync(this); } catch (Throwable ignored) {}
     }
 
     private String httpGet(String url) {
