@@ -136,6 +136,45 @@ public final class StatsReporter {
             }
         }
 
+        // 清洗：丢掉没有 id 的旧格式行（老版本客户端写的扁平账号行），
+        // 同一个 id 出现多次就合并 accounts，避免文件越写越乱
+        {
+            JSONArray cleaned = new JSONArray();
+            for (int i2 = 0; i2 < arr.length(); i2++) {
+                JSONObject o2 = arr.optJSONObject(i2);
+                if (o2 == null) continue;
+                String rid = o2.optString("id", "");
+                if (rid.isEmpty()) continue;
+                JSONObject same = null;
+                for (int k2 = 0; k2 < cleaned.length(); k2++) {
+                    JSONObject c2 = cleaned.optJSONObject(k2);
+                    if (c2 != null && rid.equals(c2.optString("id"))) { same = c2; break; }
+                }
+                if (same == null) {
+                    cleaned.put(o2);
+                } else {
+                    JSONArray from = o2.optJSONArray("accounts");
+                    JSONArray to = same.optJSONArray("accounts");
+                    if (to == null) { to = new JSONArray(); same.put("accounts", to); }
+                    if (from != null) for (int a2 = 0; a2 < from.length(); a2++) {
+                        JSONObject acc = from.optJSONObject(a2);
+                        if (acc == null) continue;
+                        boolean dup = false;
+                        for (int b2 = 0; b2 < to.length(); b2++) {
+                            JSONObject ex = to.optJSONObject(b2);
+                            if (ex != null && ex.optLong("uid", 0) == acc.optLong("uid", 0)
+                                    && ex.optString("platform", "").equals(acc.optString("platform", ""))) {
+                                dup = true;
+                                break;
+                            }
+                        }
+                        if (!dup) to.put(acc);
+                    }
+                }
+            }
+            arr = cleaned;
+        }
+
         // 不做节流：每次打开应用都上报，保证账号/版本变化能立刻反映到统计里
         boolean remoteExists = sha.length() > 0;
         if (!remoteExists) {
