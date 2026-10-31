@@ -867,6 +867,23 @@ public class HlxFishService extends Service {
         return false;
     }
 
+    /** 同一个人反复发同一句话（洗屏/机器人），只回第一次 */
+    private boolean repeatedSameText(long uid, String text) {
+        try {
+            if (text == null) return false;
+            String t = text.trim();
+            if (t.length() < 3) return false;
+            String key = "lastmsg_" + uid;
+            String prev = sp.getString(key, "");
+            if (t.equals(prev)) {
+                sp.edit().putInt(key + "_dup", sp.getInt(key + "_dup", 0) + 1).apply();
+                return true;
+            }
+            sp.edit().putString(key, t).putInt(key + "_dup", 0).apply();
+        } catch (Exception ignored) {}
+        return false;
+    }
+
     /** 这个帖子是不是已确认锁定 */
     private boolean postLocked(long pid) {
         return pid > 0 && sp.getString("locked_posts", "").contains("," + pid + ",");
@@ -1651,6 +1668,12 @@ public class HlxFishService extends Service {
                 if (hasReplied(hlx, pid, cid, ct)) continue;         // 双保险
                 if (System.currentTimeMillis() < sp.getLong("rt_t_" + cid, 0)) continue;  // 退避中
                 incomingTick(from, fromNick);
+                if (repeatedSameText(from, text)) {
+                    markReplied(cid);
+                    log("🔁 " + (fromNick.isEmpty() ? ("uid=" + from) : fromNick)
+                            + " 又发了一遍同样的话，跳过不重复回");
+                    continue;
+                }
                 if (postLocked(pid)) {
                     markReplied(cid);
                     log("🔒 帖子 " + pid + " 已确认锁定，跳过回复");
